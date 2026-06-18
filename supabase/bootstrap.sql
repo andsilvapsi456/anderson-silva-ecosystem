@@ -1,8 +1,19 @@
 -- ════════════════════════════════════════════════════════════════
 -- BOOTSTRAP COMPLETO — cole no SQL Editor do Supabase e rode UMA vez.
--- Parte 1: tabelas + enums (gerado do schema Prisma).
--- Parte 2: RLS, triggers, funções e preferências (migrações 0001–0007).
+-- É RE-EXECUTÁVEL: começa zerando o schema public (seguro enquanto
+-- não há dados de verdade), depois cria tudo do zero.
 -- ════════════════════════════════════════════════════════════════
+
+-- ===== RESET (idempotência): zera o schema public e regrava grants =====
+drop schema if exists public cascade;
+create schema public;
+grant usage on schema public to postgres, anon, authenticated, service_role;
+grant all   on schema public to postgres, service_role;
+alter default privileges in schema public grant all on tables    to postgres, anon, authenticated, service_role;
+alter default privileges in schema public grant all on functions to postgres, anon, authenticated, service_role;
+alter default privileges in schema public grant all on sequences to postgres, anon, authenticated, service_role;
+-- remove policies de storage de tentativas anteriores (recriadas abaixo)
+drop policy if exists "staff acessa anexos" on storage.objects;
 
 -- ========== PARTE 1: ESQUEMA (tabelas, enums, índices, FKs) ==========
 -- CreateSchema
@@ -536,7 +547,6 @@ ALTER TABLE "diary_entries" ADD CONSTRAINT "diary_entries_patient_id_fkey" FOREI
 ALTER TABLE "audit_logs" ADD CONSTRAINT "audit_logs_actor_id_fkey" FOREIGN KEY ("actor_id") REFERENCES "profiles"("id") ON DELETE SET NULL ON UPDATE CASCADE;
 
 
-
 -- ========== 0001_init.sql ==========
 -- ════════════════════════════════════════════════════════════════
 -- ANDERSON SILVA — ECOSSISTEMA CLÍNICO · MIGRAÇÃO INICIAL
@@ -839,7 +849,7 @@ create extension if not exists btree_gist;
 alter table public.appointments
   add constraint appointments_sem_sobreposicao
   exclude using gist (
-    tstzrange(starts_at, ends_at) with &&
+    tsrange(starts_at, ends_at) with &&
   ) where (status <> 'CANCELADA');
 
 -- ── 2. Pagamento: PIX manual (Nubank) — sem gateway, nada a criar aqui.

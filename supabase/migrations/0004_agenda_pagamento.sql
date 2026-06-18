@@ -11,7 +11,7 @@ create extension if not exists btree_gist;
 alter table public.appointments
   add constraint appointments_sem_sobreposicao
   exclude using gist (
-    tstzrange(starts_at, ends_at) with &&
+    tsrange(starts_at, ends_at) with &&
   ) where (status <> 'CANCELADA');
 
 -- ── 2. Pagamento: PIX manual (Nubank) — sem gateway, nada a criar aqui.
