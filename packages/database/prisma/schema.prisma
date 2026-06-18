@@ -1,0 +1,560 @@
+// ════════════════════════════════════════════════════════════════
+// ANDERSON SILVA — ECOSSISTEMA CLÍNICO · SCHEMA PRISMA
+// Banco: Supabase Postgres. Auth: Supabase Auth (auth.users).
+// profiles.id referencia auth.users.id (criado via trigger SQL).
+// RLS é aplicada nas migrations SQL (supabase/migrations).
+// ════════════════════════════════════════════════════════════════
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL")
+}
+
+// ─────────────────────────── ENUMS ───────────────────────────
+
+enum Role {
+  ADMIN
+  PSYCHOLOGIST
+  SECRETARY
+  COORDINATOR
+  PATIENT
+}
+
+enum LeadSource {
+  SITE
+  WHATSAPP
+  INSTAGRAM
+  FACEBOOK
+  INDICACAO
+  OUTRO
+}
+
+enum LeadStage {
+  NOVO
+  PRIMEIRO_CONTATO
+  TRIAGEM
+  AGENDAMENTO
+  EM_ATENDIMENTO
+  ALTA
+  PERDIDO
+}
+
+enum AppointmentStatus {
+  PENDENTE
+  CONFIRMADA
+  REALIZADA
+  CANCELADA
+  FALTA
+}
+
+enum AppointmentMode {
+  PRESENCIAL
+  ONLINE
+}
+
+enum VideoProvider {
+  GOOGLE_MEET
+  ZOOM
+  INTERNO
+}
+
+enum TransactionKind {
+  RECEITA
+  DESPESA
+}
+
+enum TransactionStatus {
+  PENDENTE
+  PAGO
+  ATRASADO
+  CANCELADO
+}
+
+enum PaymentMethod {
+  PIX
+  CARTAO
+  BOLETO
+  DINHEIRO
+  TRANSFERENCIA
+}
+
+enum RecordEntryKind {
+  ANAMNESE
+  EVOLUCAO
+  PLANO_TERAPEUTICO
+  HIPOTESE_DIAGNOSTICA
+  ENCAMINHAMENTO
+  OBSERVACAO
+}
+
+enum DocumentKind {
+  CONTRATO
+  DECLARACAO
+  RELATORIO
+  RECIBO
+  LAUDO
+  TERMO_LGPD
+  OUTRO
+}
+
+enum NotificationChannel {
+  EMAIL
+  WHATSAPP
+  PUSH
+  INTERNO
+}
+
+// ─────────────────────────── IDENTIDADE ───────────────────────────
+
+/// Perfil 1:1 com auth.users do Supabase. Controla papel e acesso.
+model Profile {
+  id        String   @id @db.Uuid // = auth.users.id
+  role      Role     @default(PATIENT)
+  fullName  String   @map("full_name")
+  email     String   @unique
+  phone     String?
+  avatarUrl String?  @map("avatar_url")
+  mfaEnabled Boolean @default(false) @map("mfa_enabled")
+  active    Boolean  @default(true)
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  patient        Patient?
+  recordEntries  RecordEntry[]
+  auditLogs      AuditLog[]
+  messages       Message[]
+  tasks          Task[]        @relation("TaskAssignee")
+  appointments   Appointment[] @relation("Clinician")
+
+  @@map("profiles")
+}
+
+// ─────────────────────────── CRM ───────────────────────────
+
+model Lead {
+  id            String     @id @default(uuid()) @db.Uuid
+  name          String
+  email         String?
+  phone         String?
+  source        LeadSource @default(SITE)
+  stage         LeadStage  @default(NOVO)
+  message       String?
+  utmCampaign   String?    @map("utm_campaign")
+  lastContactAt DateTime?  @map("last_contact_at")
+  lostReason    String?    @map("lost_reason")
+  convertedAt   DateTime?  @map("converted_at")
+  createdAt     DateTime   @default(now()) @map("created_at")
+  updatedAt     DateTime   @updatedAt @map("updated_at")
+
+  patient Patient? // preenchido quando lead vira paciente
+
+  @@index([stage])
+  @@index([source])
+  @@map("leads")
+}
+
+// ─────────────────────────── PACIENTES ───────────────────────────
+
+model Patient {
+  id                 String    @id @default(uuid()) @db.Uuid
+  profileId          String?   @unique @map("profile_id") @db.Uuid // login do portal
+  leadId             String?   @unique @map("lead_id") @db.Uuid
+  name               String
+  socialName         String?   @map("social_name") // nome social — respeito à identidade
+  photoUrl           String?   @map("photo_url") // foto do perfil (data URL ou Storage)
+  pronouns           String?
+  cpf                String?   @unique
+  rg                 String?
+  birthDate          DateTime? @map("birth_date") @db.Date
+  phone              String?
+  whatsapp           String?
+  email              String?
+  addressStreet      String?   @map("address_street")
+  addressCity        String?   @map("address_city")
+  addressState       String?   @map("address_state")
+  addressZip         String?   @map("address_zip")
+  insurance          String?   // convênio
+  financialGuardian  String?   @map("financial_guardian") // responsável financeiro
+  emergencyContact   String?   @map("emergency_contact")
+  naturalidade       String?   // cidade/UF de nascimento (ficha de cadastro)
+  billingDay         Int?      @map("billing_day") // melhor dia para pagamento (1–28)
+  notes              String?
+  active             Boolean   @default(true)
+  dischargedAt       DateTime? @map("discharged_at")
+  createdAt          DateTime  @default(now()) @map("created_at")
+  updatedAt          DateTime  @updatedAt @map("updated_at")
+
+  profile       Profile?       @relation(fields: [profileId], references: [id])
+  lead          Lead?          @relation(fields: [leadId], references: [id])
+  appointments  Appointment[]
+  recordEntries RecordEntry[]
+  transactions  Transaction[]
+  documents     Document[]
+  attachments   Attachment[]
+  threads       MessageThread[]
+  npsResponses  NpsResponse[]
+  consents      Consent[]
+  diaryEntries  DiaryEntry[]
+
+  @@index([name])
+  @@map("patients")
+}
+
+/// Consentimentos LGPD com versionamento e trilha completa.
+model Consent {
+  id        String    @id @default(uuid()) @db.Uuid
+  patientId String    @map("patient_id") @db.Uuid
+  kind      String    // ex.: "tratamento_dados", "teleatendimento", "uso_imagem"
+  version   String    // versão do termo aceito
+  grantedAt DateTime  @default(now()) @map("granted_at")
+  revokedAt DateTime? @map("revoked_at")
+  ipAddress String?   @map("ip_address")
+
+  patient Patient @relation(fields: [patientId], references: [id], onDelete: Cascade)
+
+  @@map("consents")
+}
+
+// ─────────────────────────── AGENDA ───────────────────────────
+
+model Room {
+  id           String        @id @default(uuid()) @db.Uuid
+  name         String        @unique
+  active       Boolean       @default(true)
+  appointments Appointment[]
+
+  @@map("rooms")
+}
+
+model Appointment {
+  id             String            @id @default(uuid()) @db.Uuid
+  patientId      String            @map("patient_id") @db.Uuid
+  clinicianId    String?           @map("clinician_id") @db.Uuid
+  roomId         String?           @map("room_id") @db.Uuid
+  startsAt       DateTime          @map("starts_at")
+  endsAt         DateTime          @map("ends_at")
+  mode           AppointmentMode   @default(PRESENCIAL)
+  status         AppointmentStatus @default(PENDENTE)
+  videoProvider  VideoProvider?    @map("video_provider")
+  videoLink      String?           @map("video_link")
+  videoStartedAt DateTime?         @map("video_started_at") // registro teleatendimento
+  videoEndedAt   DateTime?         @map("video_ended_at")
+  recurrenceRule String?           @map("recurrence_rule") // RRULE (RFC 5545)
+  recurrenceId   String?           @map("recurrence_id") @db.Uuid // agrupa série
+  googleEventId  String?           @map("google_event_id") // sync Google Calendar
+  cancelReason   String?           @map("cancel_reason")
+  notes          String?
+  createdAt      DateTime          @default(now()) @map("created_at")
+  updatedAt      DateTime          @updatedAt @map("updated_at")
+
+  patient      Patient       @relation(fields: [patientId], references: [id])
+  clinician    Profile?      @relation("Clinician", fields: [clinicianId], references: [id])
+  room         Room?         @relation(fields: [roomId], references: [id])
+  transactions Transaction[]
+  reminders    Reminder[]
+
+  @@index([startsAt])
+  @@index([patientId, startsAt])
+  @@index([status])
+  @@map("appointments")
+}
+
+/// Fila de lembretes (WhatsApp/e-mail) — processada por cron na Vercel.
+model Reminder {
+  id            String              @id @default(uuid()) @db.Uuid
+  appointmentId String              @map("appointment_id") @db.Uuid
+  channel       NotificationChannel @default(WHATSAPP)
+  kind          String              // "confirmacao" | "lembrete_24h" | "lembrete_2h" | "cobranca"
+  scheduledFor  DateTime            @map("scheduled_for")
+  sentAt        DateTime?           @map("sent_at")
+  error         String?
+
+  appointment Appointment @relation(fields: [appointmentId], references: [id], onDelete: Cascade)
+
+  @@index([scheduledFor, sentAt])
+  @@map("reminders")
+}
+
+// ─────────────────────────── PRONTUÁRIO ───────────────────────────
+
+/// Entrada de prontuário — imutável após criação; alterações geram versões.
+model RecordEntry {
+  id        String          @id @default(uuid()) @db.Uuid
+  patientId String          @map("patient_id") @db.Uuid
+  authorId  String          @map("author_id") @db.Uuid
+  kind      RecordEntryKind
+  title     String
+  content   String          // criptografado em repouso (Supabase) + TLS em trânsito
+  aiSummary String?         @map("ai_summary") // resumo assistivo opcional — nunca substitui o profissional
+  createdAt DateTime        @default(now()) @map("created_at")
+  updatedAt DateTime        @updatedAt @map("updated_at")
+
+  patient  Patient               @relation(fields: [patientId], references: [id])
+  author   Profile               @relation(fields: [authorId], references: [id])
+  versions RecordEntryVersion[]
+
+  @@index([patientId, createdAt])
+  @@map("record_entries")
+}
+
+/// Histórico de alterações do prontuário (exigência ética/CFP).
+model RecordEntryVersion {
+  id        String   @id @default(uuid()) @db.Uuid
+  entryId   String   @map("entry_id") @db.Uuid
+  content   String
+  editedBy  String   @map("edited_by") @db.Uuid
+  editedAt  DateTime @default(now()) @map("edited_at")
+
+  entry RecordEntry @relation(fields: [entryId], references: [id], onDelete: Cascade)
+
+  @@map("record_entry_versions")
+}
+
+/// Templates de anamnese/evolução com campos personalizados (JSON Schema).
+model RecordTemplate {
+  id        String          @id @default(uuid()) @db.Uuid
+  kind      RecordEntryKind
+  name      String
+  schema    Json            // definição dos campos personalizados
+  active    Boolean         @default(true)
+  createdAt DateTime        @default(now()) @map("created_at")
+
+  @@map("record_templates")
+}
+
+// ─────────────────────────── FINANCEIRO ───────────────────────────
+
+model Transaction {
+  id            String            @id @default(uuid()) @db.Uuid
+  patientId     String?           @map("patient_id") @db.Uuid
+  appointmentId String?           @map("appointment_id") @db.Uuid
+  kind          TransactionKind
+  status        TransactionStatus @default(PENDENTE)
+  method        PaymentMethod?
+  description   String
+  amountCents   Int               @map("amount_cents")
+  dueDate       DateTime          @map("due_date") @db.Date
+  paidAt        DateTime?         @map("paid_at")
+  category      String?           // ex.: "sessao", "aluguel", "marketing"
+  createdAt     DateTime          @default(now()) @map("created_at")
+  updatedAt     DateTime          @updatedAt @map("updated_at")
+
+  patient     Patient?     @relation(fields: [patientId], references: [id])
+  appointment Appointment? @relation(fields: [appointmentId], references: [id])
+  receipt     Receipt?
+
+  @@index([status, dueDate])
+  @@index([kind, dueDate])
+  @@map("transactions")
+}
+
+/// Código de recuperação de senha (OTP WhatsApp/SMS) — hash + expiração.
+model RecoveryCode {
+  id         String    @id @default(uuid()) @db.Uuid
+  contact    String    // telefone/e-mail normalizado
+  codeHash   String    @map("code_hash") // sha256 do código
+  channel    String    // "whatsapp" | "sms"
+  expiresAt  DateTime  @map("expires_at")
+  consumedAt DateTime? @map("consumed_at")
+  attempts   Int       @default(0)
+  createdAt  DateTime  @default(now()) @map("created_at")
+
+  @@index([contact, expiresAt])
+  @@map("recovery_codes")
+}
+
+/// Recibo numerado sequencialmente — disponível para download no portal.
+model Receipt {
+  id            String   @id @default(uuid()) @db.Uuid
+  transactionId String   @unique @map("transaction_id") @db.Uuid
+  number        String   @unique // REC-2026-0001
+  pdfPath       String?  @map("pdf_path") // Supabase Storage
+  issuedAt      DateTime @default(now()) @map("issued_at")
+
+  transaction Transaction @relation(fields: [transactionId], references: [id])
+
+  @@map("receipts")
+}
+
+// ─────────────────────────── DOCUMENTOS ───────────────────────────
+
+model DocumentTemplate {
+  id        String       @id @default(uuid()) @db.Uuid
+  kind      DocumentKind
+  name      String
+  body      String       // HTML com placeholders {{paciente.nome}} etc.
+  active    Boolean      @default(true)
+  createdAt DateTime     @default(now()) @map("created_at")
+
+  documents Document[]
+
+  @@map("document_templates")
+}
+
+model Document {
+  id         String       @id @default(uuid()) @db.Uuid
+  patientId  String       @map("patient_id") @db.Uuid
+  templateId String?      @map("template_id") @db.Uuid
+  kind       DocumentKind
+  title      String
+  body       String       // conteúdo final renderizado
+  pdfPath    String?      @map("pdf_path")
+  signedAt   DateTime?    @map("signed_at") // assinatura eletrônica
+  signedBy   String?      @map("signed_by")
+  signatureHash String?   @map("signature_hash")
+  createdAt  DateTime     @default(now()) @map("created_at")
+
+  patient  Patient           @relation(fields: [patientId], references: [id])
+  template DocumentTemplate? @relation(fields: [templateId], references: [id])
+
+  @@map("documents")
+}
+
+/// Arquivos anexos (Supabase Storage) — docs, contratos, termos.
+model Attachment {
+  id        String   @id @default(uuid()) @db.Uuid
+  patientId String   @map("patient_id") @db.Uuid
+  name      String
+  path      String   // bucket path
+  mimeType  String   @map("mime_type")
+  sizeBytes Int      @map("size_bytes")
+  createdAt DateTime @default(now()) @map("created_at")
+
+  patient Patient @relation(fields: [patientId], references: [id], onDelete: Cascade)
+
+  @@map("attachments")
+}
+
+// ─────────────────────────── MENSAGENS ───────────────────────────
+
+model MessageThread {
+  id        String    @id @default(uuid()) @db.Uuid
+  patientId String    @map("patient_id") @db.Uuid
+  subject   String?
+  createdAt DateTime  @default(now()) @map("created_at")
+
+  patient  Patient   @relation(fields: [patientId], references: [id])
+  messages Message[]
+
+  @@map("message_threads")
+}
+
+model Message {
+  id       String    @id @default(uuid()) @db.Uuid
+  threadId String    @map("thread_id") @db.Uuid
+  senderId String    @map("sender_id") @db.Uuid
+  body     String
+  readAt   DateTime? @map("read_at")
+  createdAt DateTime @default(now()) @map("created_at")
+
+  thread MessageThread @relation(fields: [threadId], references: [id], onDelete: Cascade)
+  sender Profile       @relation(fields: [senderId], references: [id])
+
+  @@index([threadId, createdAt])
+  @@map("messages")
+}
+
+// ─────────────────────────── OPERAÇÃO ───────────────────────────
+
+/// Central de tarefas internas da equipe.
+model Task {
+  id         String    @id @default(uuid()) @db.Uuid
+  assigneeId String?   @map("assignee_id") @db.Uuid
+  title      String
+  notes      String?
+  dueDate    DateTime? @map("due_date") @db.Date
+  doneAt     DateTime? @map("done_at")
+  createdAt  DateTime  @default(now()) @map("created_at")
+
+  assignee Profile? @relation("TaskAssignee", fields: [assigneeId], references: [id])
+
+  @@map("tasks")
+}
+
+/// Avisos exibidos no portal do paciente.
+model Notice {
+  id        String    @id @default(uuid()) @db.Uuid
+  title     String
+  body      String
+  publishedAt DateTime @default(now()) @map("published_at")
+  expiresAt DateTime? @map("expires_at")
+
+  @@map("notices")
+}
+
+/// Pesquisa de satisfação NPS.
+model NpsResponse {
+  id        String   @id @default(uuid()) @db.Uuid
+  patientId String   @map("patient_id") @db.Uuid
+  score     Int      // 0–10
+  comment   String?
+  createdAt DateTime @default(now()) @map("created_at")
+
+  patient Patient @relation(fields: [patientId], references: [id])
+
+  @@map("nps_responses")
+}
+
+/// Diário do paciente — check-in de humor (emoji) e anotações para a sessão.
+/// Escrito pelo paciente no portal; lido apenas por perfis clínicos (RLS).
+model DiaryEntry {
+  id        String   @id @default(uuid()) @db.Uuid
+  patientId String   @map("patient_id") @db.Uuid
+  mood      Int?     // 1–5 (😞 → 😄); null = só anotação
+  note      String?  // pontos para conversar na próxima sessão
+  createdAt DateTime @default(now()) @map("created_at")
+
+  patient Patient @relation(fields: [patientId], references: [id], onDelete: Cascade)
+
+  @@index([patientId, createdAt])
+  @@map("diary_entries")
+}
+
+/// Configurações de notificações da clínica (linha única).
+model ClinicSettings {
+  id        String   @id @default(uuid()) @db.Uuid
+  singleton Boolean  @default(true) @unique // garante 1 linha só
+
+  // E-mail diário com a agenda do dia para o psicólogo
+  dailyAgendaEnabled Boolean @default(true) @map("daily_agenda_enabled")
+  dailyAgendaHour    Int     @default(8) @map("daily_agenda_hour")
+  dailyAgendaEmail   String? @map("daily_agenda_email") // default: e-mail do admin
+
+  // Lembrete de sessão ao paciente, com confirmação pelo WhatsApp
+  remind24hEmail    Boolean @default(true) @map("remind_24h_email")
+  remind24hWhatsapp Boolean @default(true) @map("remind_24h_whatsapp")
+  remind2hEmail     Boolean @default(false) @map("remind_2h_email")
+  remind2hWhatsapp  Boolean @default(true) @map("remind_2h_whatsapp")
+
+  // Lembrete de cobrança na data acordada + reenvio se não pago
+  billingEmail     Boolean @default(true) @map("billing_email")
+  billingWhatsapp  Boolean @default(true) @map("billing_whatsapp")
+  billingRetryDays Int     @default(5) @map("billing_retry_days")
+
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  @@map("clinic_settings")
+}
+
+/// Trilha de auditoria — toda leitura/escrita sensível é registrada.
+model AuditLog {
+  id        String   @id @default(uuid()) @db.Uuid
+  actorId   String?  @map("actor_id") @db.Uuid
+  action    String   // ex.: "record_entry.read", "patient.update"
+  entity    String   // tabela/recurso
+  entityId  String?  @map("entity_id")
+  metadata  Json?
+  ipAddress String?  @map("ip_address")
+  createdAt DateTime @default(now()) @map("created_at")
+
+  actor Profile? @relation(fields: [actorId], references: [id])
+
+  @@index([entity, entityId])
+  @@index([actorId, createdAt])
+  @@map("audit_logs")
+}

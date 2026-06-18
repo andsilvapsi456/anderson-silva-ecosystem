@@ -1,0 +1,106 @@
+/* ============================================================
+   ANDERSON SILVA — DESIGN SYSTEM · TOKENS
+   Marca: coral #FF5A5A · ink #202020 · Montserrat
+   Mesmos tokens do site institucional → continuidade visual
+   entre site, portal do paciente e painel administrativo.
+   ============================================================ */
+
+:root {
+  /* ---- Brand (imutáveis) ---- */
+  --brand-coral: #ff5a5a;
+  --brand-coral-600: #f0463f;
+  --brand-coral-700: #d63a34;
+  --brand-ink: #202020;
+  --brand-white: #ffffff;
+
+  /* ---- Tipografia ---- */
+  --font-sans: "Montserrat", -apple-system, system-ui, sans-serif;
+  --font-script: "Caveat", cursive;
+
+  /* ---- Movimento ---- */
+  --ease: cubic-bezier(0.4, 0, 0.15, 1);
+
+  /* ---- Escala de espaçamento (4pt grid) ---- */
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-6: 24px;
+  --space-8: 32px;
+  --space-12: 48px;
+  --space-16: 64px;
+}
+
+/* ============================================================
+   LIGHT — "clean clínico" (default do sistema)
+   ============================================================ */
+:root,
+[data-theme="light"] {
+  --bg: #f8f9fa;
+  --bg-alt: #f1f3f5;
+  --surface: #ffffff;
+  --surface-raised: #ffffff;
+  --text: #202020;
+  --text-soft: #6a7178;
+  --border: #eaeaea;
+  --border-strong: #d8dcdf;
+  --accent: var(--brand-coral);
+  --accent-hover: var(--brand-coral-600);
+  --accent-soft: #ffecea;
+  --on-accent: #ffffff;
+  --success: #19a974;
+  --success-soft: #e3f7ee;
+  --warning: #e8a317;
+  --warning-soft: #fdf3dd;
+  --danger: #d63a34;
+  --danger-soft: #fdeae9;
+  --info: #3b82f6;
+  --info-soft: #e8f0fe;
+  --shadow: 0 22px 60px -34px rgba(20, 30, 40, 0.4);
+  --shadow-sm: 0 6px 20px -14px rgba(20, 30, 40, 0.32);
+  --radius: 16px;
+  --radius-sm: 10px;
+  --radius-xs: 8px;
+}
+
+/* ============================================================
+   DARK — "moderno premium"
+   ============================================================ */
+[data-theme="dark"] {
+  --bg: #161514;
+  --bg-alt: #1f1d1b;
+  --surface: #211f1d;
+  --surface-raised: #282522;
+  --text: #f2eee9;
+  --text-soft: #a8a097;
+  --border: #332f2b;
+  --border-strong: #45403a;
+  --accent: var(--brand-coral);
+  --accent-hover: #ff7070;
+  --accent-soft: #2a1e1c;
+  --on-accent: #1a1413;
+  --success: #2fd393;
+  --success-soft: #14291f;
+  --warning: #f3b73a;
+  --warning-soft: #2b2414;
+  --danger: #ff6b64;
+  --danger-soft: #2d1817;
+  --info: #6ba3f8;
+  --info-soft: #16202e;
+  --shadow: 0 30px 70px -30px rgba(0, 0, 0, 0.7);
+  --shadow-sm: 0 12px 30px -18px rgba(0, 0, 0, 0.6);
+}
+
+/* ---- Base ---- */
+body {
+  font-family: var(--font-sans);
+  background: var(--bg);
+  color: var(--text);
+  -webkit-font-smoothing: antialiased;
+  transition: background 0.4s var(--ease), color 0.4s var(--ease);
+}
+
+::selection {
+  background: var(--accent);
+  color: var(--on-accent);
+}

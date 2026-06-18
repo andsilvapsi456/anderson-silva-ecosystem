@@ -1,0 +1,5 @@
+@import "tailwindcss";
+@import "@as/design-system/tokens.css";
+
+/* Tailwind precisa escanear os componentes compartilhados do monorepo */
+@source "../../../packages/ui/src";

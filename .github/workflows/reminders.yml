@@ -1,0 +1,20 @@
+# Lembretes a cada 15 min — o Vercel Hobby só permite cron diário,
+# então o GitHub Actions (gratuito) chama o endpoint de lembretes.
+# Secrets necessários no repositório:
+#   REMINDERS_URL  → https://admin.SEU-DOMINIO/api/cron/reminders
+#   CRON_SECRET    → o mesmo valor configurado na Vercel
+name: reminders
+
+on:
+  schedule:
+    - cron: "*/15 8-22 * * *" # 8h–22h UTC (cobre o horário de atendimento BRT)
+  workflow_dispatch: {}
+
+jobs:
+  ping:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Disparar processamento de lembretes
+        run: |
+          curl -fsS -H "Authorization: Bearer ${{ secrets.CRON_SECRET }}" \
+            "${{ secrets.REMINDERS_URL }}"

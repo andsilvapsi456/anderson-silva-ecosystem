@@ -1,0 +1,29 @@
+{
+  "name": "anderson-silva-ecosystem",
+  "private": true,
+  "version": "0.1.0",
+  "description": "Ecossistema digital da clínica Anderson Silva — Psicólogo Clínico (CRP 06/166223)",
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ],
+  "scripts": {
+    "dev": "turbo dev",
+    "dev:site": "npm run dev --workspace=@as/site",
+    "dev:portal": "npm run dev --workspace=@as/portal",
+    "dev:admin": "npm run dev --workspace=@as/admin",
+    "build": "turbo build",
+    "lint": "turbo lint",
+    "test": "node --experimental-strip-types --test tests/*.test.ts",
+    "db:generate": "npm run generate --workspace=@as/database",
+    "db:push": "npm run push --workspace=@as/database"
+  },
+  "devDependencies": {
+    "turbo": "^2.3.0",
+    "typescript": "^5.7.0"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "packageManager": "npm@10.9.0"
+}

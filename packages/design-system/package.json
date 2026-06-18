@@ -1,0 +1,9 @@
+{
+  "name": "@as/design-system",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Design System Anderson Silva — tokens, temas e preset Tailwind",
+  "exports": {
+    "./tokens.css": "./tokens.css"
+  }
+}
