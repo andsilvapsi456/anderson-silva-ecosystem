@@ -29,7 +29,7 @@ jobs:
           ls -lh backup-*.sql.gz
 
       - name: Guardar como artefato (download pela aba Actions)
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: db-backup
           path: backup-*.sql.gz
