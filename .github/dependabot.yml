@@ -1,0 +1,15 @@
+# Dependabot — alertas e PRs automáticos quando uma dependência tem
+# correção de segurança ou atualização. 100% grátis em repositório privado.
+version: 2
+updates:
+  - package-ecosystem: "npm"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+    open-pull-requests-limit: 5
+    labels:
+      - "dependencies"
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"

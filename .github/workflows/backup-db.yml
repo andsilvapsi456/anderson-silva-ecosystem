@@ -1,0 +1,36 @@
+# Backup automático e GRÁTIS do banco (GitHub Actions).
+# Roda todo domingo 06:00 (Brasília) e guarda um dump compactado por 90 dias.
+# Requisito: criar 1 secret no repositório — SUPABASE_DB_URL
+#   (Supabase → Project Settings → Database → Connection string → URI;
+#    use a string do "pooler" porta 6543, com sua senha do banco).
+name: backup-db
+
+on:
+  schedule:
+    - cron: "0 9 * * 0" # domingo 09:00 UTC = 06:00 Brasília
+  workflow_dispatch: {} # permite rodar manualmente pelo botão "Run workflow"
+
+jobs:
+  dump:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Instalar pg_dump 16 (compatível com o Postgres do Supabase)
+        run: |
+          sudo sh -c 'echo "deb http://apt.postgresql.org/pub/repos/apt $(lsb_release -cs)-pgdg main" > /etc/apt/sources.list.d/pgdg.list'
+          curl -fsSL https://www.postgresql.org/media/keys/ACCC4CF8.asc | sudo gpg --dearmor -o /etc/apt/trusted.gpg.d/pgdg.gpg
+          sudo apt-get update
+          sudo apt-get install -y postgresql-client-16
+
+      - name: Gerar dump compactado
+        run: |
+          STAMP=$(date +%Y-%m-%d)
+          pg_dump "${{ secrets.SUPABASE_DB_URL }}" --no-owner --no-privileges \
+            | gzip > "backup-${STAMP}.sql.gz"
+          ls -lh backup-*.sql.gz
+
+      - name: Guardar como artefato (download pela aba Actions)
+        uses: actions/upload-artifact@v4
+        with:
+          name: db-backup
+          path: backup-*.sql.gz
+          retention-days: 90
