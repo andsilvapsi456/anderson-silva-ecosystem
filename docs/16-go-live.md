@@ -23,10 +23,11 @@ gh repo create anderson-silva-ecosystem --private --source=. --push
 
 ## 2. 👤 Supabase (free, região São Paulo `sa-east-1`)
 1. New project → copie de **Settings → API**: `URL`, `anon key`, `service_role key`.
-2. **SQL Editor** → execute **na ordem** todas as migrações:
-   `0001_init` → `0002_notifications` → `0003_intake_diario` → `0004_agenda_pagamento` →
-   `0005_time_blocks` → `0006_clinical_scales` → `0007_agenda_prefs`.
-   > As migrações SQL são a **fonte de verdade** do banco (RLS incluída). Não use `prisma db push` sozinho.
+2. **SQL Editor** → **New query** → cole o conteúdo de **`supabase/bootstrap.sql`** → **Run**.
+   > Esse arquivo é o **script único e completo**: Parte 1 cria as tabelas/enums (DDL do Prisma),
+   > Parte 2 aplica RLS + triggers + as migrações `0001`→`0007`. Não precisa de connection string
+   > nem de `prisma db push`. Para copiá-lo de uma vez (macOS):
+   > `cat supabase/bootstrap.sql | pbcopy`
 3. Garanta 1 linha em `clinic_settings`: `insert into clinic_settings (singleton) values (true) on conflict do nothing;`
 4. **Authentication → Providers**: habilite Email (e Google/Facebook se quiser login social); templates em pt-BR.
 5. **Crie seu usuário admin** e dê o papel:
