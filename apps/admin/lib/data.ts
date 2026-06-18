@@ -269,6 +269,7 @@ export interface Charge {
 const PIX_DEMO = "hello@andersonsilvapsicologo.com.br";
 
 export async function getBillingConfigs(): Promise<BillingConfig[]> {
+  if (!isDemoMode()) return []; // sem cobrança recorrente configurada ainda (sistema novo)
   return [
     { patientId: "pat-1", patientName: "Mariana Costa", plan: "MENSALISTA", amountCents: 80000, billingDay: 5, channels: ["EMAIL", "WHATSAPP"], autoCharge: true, pixKey: PIX_DEMO },
     { patientId: "pat-2", patientName: "João Pedro Lima", plan: "PACOTE_MENSAL", amountCents: 72000, billingDay: 1, channels: ["WHATSAPP"], autoCharge: true, pixKey: PIX_DEMO },
@@ -277,6 +278,7 @@ export async function getBillingConfigs(): Promise<BillingConfig[]> {
 }
 
 export async function getCharges(): Promise<Charge[]> {
+  if (!isDemoMode()) return []; // nenhuma cobrança programada ainda (sistema novo)
   const d = (days: number) => {
     const x = new Date();
     x.setDate(x.getDate() + days);
@@ -324,72 +326,130 @@ export async function getPatientPanel(patientId: string): Promise<PatientPanel> 
     SESSAO_AVULSA: "Por sessão",
     ISENTO: "Isento",
   };
-  const d = (days: number, h = 11) => {
-    const x = new Date();
-    x.setDate(x.getDate() - days);
-    x.setHours(h, 2, 0, 0);
-    return x.toISOString();
+  const plan = {
+    label: billing ? planLabels[billing.plan] : "—",
+    model: billing?.plan === "MENSALISTA" ? "Mensalidade" : billing?.plan === "PACOTE_MENSAL" ? "Pacote" : "Avulso",
+    amountCents: billing?.amountCents ?? 0,
+    autoCharge: billing?.autoCharge ?? false,
   };
-  const confirm = (days: number) =>
-    `confirmou presença para a sessão marcada no dia ${new Date(d(days)).toLocaleDateString("pt-BR")} às 14:00`;
 
+  // DEMO: painel ilustrativo (mantém a demo bonita)
+  if (isDemoMode()) {
+    const d = (days: number, h = 11) => {
+      const x = new Date();
+      x.setDate(x.getDate() - days);
+      x.setHours(h, 2, 0, 0);
+      return x.toISOString();
+    };
+    const confirm = (days: number) =>
+      `confirmou presença para a sessão marcada no dia ${new Date(d(days)).toLocaleDateString("pt-BR")} às 14:00`;
+    return {
+      startDate: "2023-06-09",
+      status: "Cliente ativo",
+      waitlist: "Sem lista de espera",
+      meetLink: mockAppointments.find((a) => a.patientId === patientId && a.videoLink)?.videoLink ?? null,
+      attendance: { present: 60, absent: 8, cancelled: 4, unscored: 25 },
+      plan,
+      activities: [6, 13, 20, 27, 34].map((days, i) => ({ id: `act-${i}`, text: confirm(days), at: d(days) })),
+    };
+  }
+
+  // REAL: tudo calculado das sessões reais (zerado para paciente novo)
+  const [patient, allAppts] = await Promise.all([getPatient(patientId), getAppointments()]);
+  const appts = allAppts.filter((a) => a.patientId === patientId);
+  const count = (s: string) => appts.filter((a) => a.status === s).length;
+  const activityText = (a: Appointment) => {
+    const dt = new Date(a.startsAt).toLocaleDateString("pt-BR");
+    if (a.status === "REALIZADA") return `sessão realizada em ${dt}`;
+    if (a.status === "FALTA") return `falta registrada na sessão de ${dt}`;
+    if (a.status === "CANCELADA") return `sessão de ${dt} cancelada`;
+    if (a.status === "CONFIRMADA") return `sessão confirmada para ${dt}`;
+    return `sessão agendada para ${dt}`;
+  };
   return {
-    startDate: "2023-06-09",
-    status: "Cliente ativo",
+    startDate: appts.length
+      ? appts.reduce((min, a) => (a.startsAt < min ? a.startsAt : min), appts[0].startsAt)
+      : patient?.createdAt ?? new Date().toISOString(),
+    status: patient?.active ? "Cliente ativo" : "Inativo",
     waitlist: "Sem lista de espera",
-    meetLink:
-      mockAppointments.find((a) => a.patientId === patientId && a.videoLink)?.videoLink ?? null,
-    attendance: { present: 60, absent: 8, cancelled: 4, unscored: 25 },
-    plan: {
-      label: billing ? planLabels[billing.plan] : "—",
-      model: billing?.plan === "MENSALISTA" ? "Mensalidade" : billing?.plan === "PACOTE_MENSAL" ? "Pacote" : "Avulso",
-      amountCents: billing?.amountCents ?? 0,
-      autoCharge: billing?.autoCharge ?? false,
+    meetLink: appts.find((a) => a.videoLink)?.videoLink ?? null,
+    attendance: {
+      present: count("REALIZADA"),
+      absent: count("FALTA"),
+      cancelled: count("CANCELADA"),
+      unscored: appts.filter((a) => a.status === "PENDENTE" || a.status === "CONFIRMADA").length,
     },
-    activities: [6, 13, 20, 27, 34].map((days, i) => ({
-      id: `act-${i}`,
-      text: confirm(days),
-      at: d(days),
-    })),
+    plan,
+    activities: [...appts]
+      .sort((a, b) => b.startsAt.localeCompare(a.startsAt))
+      .slice(0, 8)
+      .map((a) => ({ id: a.id, text: activityText(a), at: a.startsAt })),
   };
 }
 
-/** Agregados para a página de Relatórios (demo). */
+/** Agregados para a página de Relatórios. */
 export async function getReportStats() {
+  // DEMO: números ilustrativos
+  if (isDemoMode()) {
+    return {
+      active: 13,
+      waitlist: 0,
+      discharged: 1,
+      deactivated: 57,
+      dropouts: 18,
+      byGender: [
+        { label: "Masculino", value: 10, color: "var(--info)" },
+        { label: "Feminino", value: 3, color: "#ec4899" },
+      ],
+      byAge: [
+        { label: "Crianças (0-12)", value: 0 },
+        { label: "Adolescentes (13-20)", value: 0 },
+        { label: "Jovens adultos (21-40)", value: 8 },
+        { label: "Adultos (41-60)", value: 3 },
+        { label: "Idosos (61+)", value: 2 },
+      ],
+      byPlan: [
+        { label: "Mensalista", value: 9, color: "var(--success)" },
+        { label: "Pacote mensal", value: 2, color: "#8b5cf6" },
+        { label: "Sessão avulsa", value: 1, color: "#ec4899" },
+        { label: "Isento", value: 1, color: "var(--info)" },
+      ],
+      autoChargePct: 92,
+      bySource: [
+        { label: "Site", value: 5 },
+        { label: "Indicação", value: 4 },
+        { label: "Instagram", value: 3 },
+        { label: "Google", value: 1 },
+      ],
+      referrals: [
+        { name: "Mariana Costa", count: 2 },
+        { name: "Dra. Paula (psiquiatra parceira)", count: 2 },
+      ],
+    };
+  }
+
+  // REAL: calculado dos pacientes/planos reais (faixa etária a página calcula sozinha)
+  const [patients, billing] = await Promise.all([getPatients(), getBillingConfigs()]);
+  const planCount = (p: string) => billing.filter((b) => b.plan === p).length;
+  const byPlan = [
+    { label: "Mensalista", value: planCount("MENSALISTA"), color: "var(--success)" },
+    { label: "Pacote mensal", value: planCount("PACOTE_MENSAL"), color: "#8b5cf6" },
+    { label: "Sessão avulsa", value: planCount("SESSAO_AVULSA"), color: "#ec4899" },
+    { label: "Isento", value: planCount("ISENTO"), color: "var(--info)" },
+  ].filter((x) => x.value > 0);
+  const withAuto = billing.filter((b) => b.autoCharge).length;
   return {
-    active: 13,
+    active: patients.filter((p) => p.active).length,
     waitlist: 0,
-    discharged: 1,
-    deactivated: 57,
-    dropouts: 18,
-    byGender: [
-      { label: "Masculino", value: 10, color: "var(--info)" },
-      { label: "Feminino", value: 3, color: "#ec4899" },
-    ],
-    byAge: [
-      { label: "Crianças (0-12)", value: 0 },
-      { label: "Adolescentes (13-20)", value: 0 },
-      { label: "Jovens adultos (21-40)", value: 8 },
-      { label: "Adultos (41-60)", value: 3 },
-      { label: "Idosos (61+)", value: 2 },
-    ],
-    byPlan: [
-      { label: "Mensalista", value: 9, color: "var(--success)" },
-      { label: "Pacote mensal", value: 2, color: "#8b5cf6" },
-      { label: "Sessão avulsa", value: 1, color: "#ec4899" },
-      { label: "Isento", value: 1, color: "var(--info)" },
-    ],
-    autoChargePct: 92,
-    bySource: [
-      { label: "Site", value: 5 },
-      { label: "Indicação", value: 4 },
-      { label: "Instagram", value: 3 },
-      { label: "Google", value: 1 },
-    ],
-    referrals: [
-      { name: "Mariana Costa", count: 2 },
-      { name: "Dra. Paula (psiquiatra parceira)", count: 2 },
-    ],
+    discharged: 0,
+    deactivated: patients.filter((p) => !p.active).length,
+    dropouts: 0,
+    byGender: [] as { label: string; value: number; color: string }[],
+    byAge: [] as { label: string; value: number }[],
+    byPlan,
+    autoChargePct: billing.length ? Math.round((withAuto / billing.length) * 100) : 0,
+    bySource: [] as { label: string; value: number }[],
+    referrals: [] as { name: string; count: number }[],
   };
 }
 
@@ -482,15 +542,31 @@ export async function getDashboardStats() {
     .reduce((s, t) => s + t.amountCents, 0);
   const overdueCount = receivables.filter((t) => t.status === "ATRASADO").length;
 
+  const now = new Date();
+  const patients = await getPatients();
+  const newPatientsMonth = patients.filter((p) => {
+    const c = new Date(p.createdAt);
+    return c.getMonth() === now.getMonth() && c.getFullYear() === now.getFullYear();
+  }).length;
+  const yearlyRevenueCents = receivables
+    .filter((t) => t.status === "PAGO" && new Date(t.paidAt ?? t.dueDate).getFullYear() === now.getFullYear())
+    .reduce((s, t) => s + t.amountCents, 0);
+  // ocupação: sessões ativas nos próximos 7 dias sobre ~40 horários/semana
+  const weekAhead = new Date(now.getTime() + 7 * 86_400_000);
+  const upcoming = appointments.filter((a) => {
+    const d = new Date(a.startsAt);
+    return d >= now && d <= weekAhead && a.status !== "CANCELADA";
+  }).length;
+
   return {
-    activePatients: (await getPatients()).filter((p) => p.active).length,
-    newPatientsMonth: 1,
+    activePatients: patients.filter((p) => p.active).length,
+    newPatientsMonth,
     sessionsDone: done,
     monthlyRevenueCents: revenue,
-    yearlyRevenueCents: revenue * 6, // demo
+    yearlyRevenueCents,
     openReceivablesCents: openCents,
     overdueCount,
     noShowRate: done + missed ? Math.round((missed / (done + missed)) * 100) : 0,
-    occupancy: 72, // demo: sessões agendadas ÷ slots disponíveis
+    occupancy: Math.min(100, Math.round((upcoming / 40) * 100)),
   };
 }
