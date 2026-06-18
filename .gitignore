@@ -8,3 +8,5 @@ dist/
 .vercel
 *.tsbuildinfo
 .DS_Store
+.open-next/
+.wrangler/

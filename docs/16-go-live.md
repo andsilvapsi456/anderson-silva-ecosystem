@@ -35,18 +35,25 @@ gh repo create anderson-silva-ecosystem --private --source=. --push
    update profiles set role = 'ADMIN' where email = 'andersonvictor07@gmail.com';
    ```
 
-## 3. 👤 Vercel (free) — 3 projetos, mesmo repo
+## 3. 👤 Cloudflare Workers (free, comercial OK) — 3 apps, mesmo repo
 
-| Projeto | Root Directory | Domínio |
-|---|---|---|
-| `as-site`   | `apps/site`   | `andersonsilvapsicologo.com.br` |
-| `as-portal` | `apps/portal` | `portal.andersonsilvapsicologo.com.br` |
-| `as-admin`  | `apps/admin`  | `admin.andersonsilvapsicologo.com.br` |
+Os apps usam o adaptador **OpenNext** (`@opennextjs/cloudflare`) — já configurado
+(`open-next.config.ts` + `wrangler.jsonc` em cada app).
 
-Em cada projeto: Import do GitHub → Root Directory conforme a tabela → cole as variáveis de ambiente (próximo passo).
-DNS: `CNAME portal/admin → cname.vercel-dns.com`; apex `A 76.76.21.21`. HTTPS é automático.
+No painel **Cloudflare → Workers & Pages → Create → Workers → Connect to Git**,
+crie **3 Workers** a partir do mesmo repositório:
 
-## 4. 👤 Variáveis de ambiente (cole em cada projeto Vercel)
+| Worker | Root directory | Build command | Deploy command |
+|---|---|---|---|
+| `as-site`   | `apps/site`   | `npx opennextjs-cloudflare build` | `npx wrangler deploy` |
+| `as-portal` | `apps/portal` | `npx opennextjs-cloudflare build` | `npx wrangler deploy` |
+| `as-admin`  | `apps/admin`  | `npx opennextjs-cloudflare build` | `npx wrangler deploy` |
+
+> A compatibilidade `nodejs_compat` já está nos `wrangler.jsonc`. Domínios
+> customizados: em cada Worker → **Settings → Domains & Routes** → Add custom domain
+> (`andersonsilvapsicologo.com.br`, `portal.…`, `admin.…`). HTTPS é automático.
+
+## 4. 👤 Variáveis de ambiente (em cada Worker → Settings → Variables)
 Use o `.env.example` como mapa. Mínimo para o sistema **funcionar de verdade** (sair do demo):
 - `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_ANON_KEY`, `SUPABASE_SERVICE_ROLE_KEY`
 - `NEXT_PUBLIC_SITE_URL`, `NEXT_PUBLIC_PORTAL_URL`, `NEXT_PUBLIC_ADMIN_URL`
@@ -61,8 +68,15 @@ Para cada integração que quiser ligar:
 - **NFS-e Osasco (Focus NFe)**: `FOCUS_NFE_TOKEN`, `FOCUS_NFE_AMBIENTE` (`homologacao`→`producao`), `NFSE_PRESTADOR_CNPJ`, `NFSE_INSCRICAO_MUNICIPAL`.
 - **Erros (opcional)**: `SENTRY_DSN`.
 
-## 5. Crons (Vercel free = 2 crons no projeto admin)
-`apps/admin/vercel.json` já agenda a **agenda diária 8h** (`0 11 * * *` UTC). Os **lembretes a cada 15 min** rodam por GitHub Action (Vercel Hobby só faz cron diário) chamando `…/api/cron/reminders` com `Authorization: Bearer $CRON_SECRET`.
+## 5. Crons (GitHub Actions — grátis, independem do host)
+Já configurados em `.github/workflows/`:
+- **`daily-agenda.yml`** — e-mail da agenda às 8h (BRT).
+- **`reminders.yml`** — lembretes a cada 15 min.
+- **`backup-db.yml`** — backup do banco aos domingos.
+
+No GitHub → **Settings → Secrets and variables → Actions**, crie os secrets:
+`CRON_SECRET`, `DAILY_AGENDA_URL` (`https://admin.SEU-DOMINIO/api/cron/daily-agenda`),
+`REMINDERS_URL` (`…/api/cron/reminders`) e `SUPABASE_DB_URL` (string de conexão do banco, para o backup).
 
 ## 6. ✅ Smoke test pós-deploy (faça com 1 paciente de teste)
 1. Login no admin com 2FA.

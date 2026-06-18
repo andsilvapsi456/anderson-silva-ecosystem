@@ -1,0 +1,19 @@
+# Agenda diária por e-mail às 8h (Brasília) — independente do host.
+# Secrets necessários no repositório:
+#   DAILY_AGENDA_URL → https://admin.SEU-DOMINIO/api/cron/daily-agenda
+#   CRON_SECRET      → o mesmo valor configurado no Cloudflare
+name: daily-agenda
+
+on:
+  schedule:
+    - cron: "0 11 * * *" # 11:00 UTC = 08:00 Brasília
+  workflow_dispatch: {}
+
+jobs:
+  ping:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Disparar e-mail da agenda do dia
+        run: |
+          curl -fsS -H "Authorization: Bearer ${{ secrets.CRON_SECRET }}" \
+            "${{ secrets.DAILY_AGENDA_URL }}"
