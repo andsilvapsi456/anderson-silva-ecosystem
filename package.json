@@ -21,7 +21,7 @@
   "devDependencies": {
     "@opennextjs/cloudflare": "^1.19.11",
     "turbo": "^2.3.0",
-    "typescript": "^5.7.0",
+    "typescript": "^6.0.3",
     "wrangler": "^4.101.0"
   },
   "engines": {
