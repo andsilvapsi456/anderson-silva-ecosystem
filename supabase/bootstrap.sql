@@ -1,8 +1,21 @@
 -- ════════════════════════════════════════════════════════════════
--- BOOTSTRAP COMPLETO — cole no SQL Editor do Supabase e rode UMA vez.
--- É RE-EXECUTÁVEL: começa zerando o schema public (seguro enquanto
--- não há dados de verdade), depois cria tudo do zero.
+-- BOOTSTRAP — PRIMEIRA INSTALAÇÃO do banco. Cole no SQL Editor e rode.
+-- ⚠️  Só para instalar do zero. Depois de ter dados, use migrações
+--     INCREMENTAIS (0008+), NUNCA rode este arquivo de novo.
+-- Há uma TRAVA abaixo: se já houver pacientes/sessões, ele ABORTA sem
+-- apagar nada.
 -- ════════════════════════════════════════════════════════════════
+
+-- ===== TRAVA DE SEGURANÇA: impede apagar um banco que já tem dados =====
+do $$
+begin
+  if to_regclass('public.patients') is not null
+     and ( (select count(*) from public.patients)     > 0
+        or (select count(*) from public.appointments) > 0 ) then
+    raise exception
+      'ABORTADO: este banco já tem dados reais (pacientes/sessões). O bootstrap é só para a 1ª instalação. Para mudanças, use migrações incrementais.';
+  end if;
+end $$;
 
 -- ===== RESET (idempotência): zera o schema public e regrava grants =====
 drop schema if exists public cascade;
