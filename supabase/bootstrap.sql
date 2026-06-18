@@ -25,7 +25,6 @@ grant all   on schema public to postgres, service_role;
 alter default privileges in schema public grant all on tables    to postgres, anon, authenticated, service_role;
 alter default privileges in schema public grant all on functions to postgres, anon, authenticated, service_role;
 alter default privileges in schema public grant all on sequences to postgres, anon, authenticated, service_role;
--- remove policies de storage de tentativas anteriores (recriadas abaixo)
 drop policy if exists "staff acessa anexos" on storage.objects;
 
 -- ========== PARTE 1: ESQUEMA (tabelas, enums, índices, FKs) ==========
@@ -953,3 +952,40 @@ alter table public.clinic_settings
   add column if not exists lunch_end      text    not null default '13:00',
   add column if not exists lunch_weekdays int[]   not null default '{1,2,3,4,5}',
   add column if not exists block_holidays boolean not null default true;
+
+-- ========== 0008_db_defaults.sql ==========
+-- ════════════════════════════════════════════════════════════════════
+-- 0008 · DEFAULTS NO BANCO (id + updated_at)
+-- O Prisma gera `id` (uuid) e `updated_at` no código, então o DDL não
+-- criou os DEFAULTs. Como o app grava direto pelo Supabase, sem esses
+-- defaults toda inserção falha. Este script adiciona em TODAS as tabelas.
+-- Idempotente: só preenche onde está faltando.
+-- ════════════════════════════════════════════════════════════════════
+
+do $$
+declare r record;
+begin
+  -- id UUID sem default → gen_random_uuid()
+  for r in
+    select table_name
+    from information_schema.columns
+    where table_schema = 'public'
+      and column_name = 'id'
+      and data_type = 'uuid'
+      and column_default is null
+  loop
+    execute format('alter table public.%I alter column id set default gen_random_uuid()', r.table_name);
+  end loop;
+
+  -- created_at / updated_at sem default → now()
+  for r in
+    select table_name, column_name
+    from information_schema.columns
+    where table_schema = 'public'
+      and column_name in ('created_at', 'updated_at')
+      and data_type like 'timestamp%'
+      and column_default is null
+  loop
+    execute format('alter table public.%I alter column %I set default now()', r.table_name, r.column_name);
+  end loop;
+end $$;
