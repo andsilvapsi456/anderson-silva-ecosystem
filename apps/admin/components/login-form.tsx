@@ -38,38 +38,44 @@ export function LoginForm({ demo = false }: { demo?: boolean }) {
       window.location.assign("/");
       return;
     }
+    const fd = new FormData(e.currentTarget);
     setBusy(true);
     setError("");
-    const supabase = getClient();
-    const fd = new FormData(e.currentTarget);
-    const { error: signErr } = await supabase.auth.signInWithPassword({
-      email: String(fd.get("email")),
-      password: String(fd.get("password")),
-    });
-    if (signErr) {
-      setBusy(false);
-      setError("E-mail ou senha incorretos.");
-      return;
-    }
-    // 2FA ativo? eleva a sessão para AAL2 antes de entrar
-    const { data: aal } = await supabase.auth.mfa.getAuthenticatorAssuranceLevel();
-    if (aal?.nextLevel === "aal2" && aal.nextLevel !== aal.currentLevel) {
-      const { data: factors } = await supabase.auth.mfa.listFactors();
-      const totp = factors?.totp?.[0];
-      if (totp) {
-        const { data: challenge, error: chErr } = await supabase.auth.mfa.challenge({ factorId: totp.id });
-        if (chErr || !challenge) {
-          setBusy(false);
-          setError("Não foi possível iniciar o 2FA. Tente novamente.");
-          return;
-        }
-        mfaRef.current = { factorId: totp.id, challengeId: challenge.id };
-        setStep("mfa");
+    try {
+      const supabase = getClient();
+      const { error: signErr } = await supabase.auth.signInWithPassword({
+        email: String(fd.get("email")),
+        password: String(fd.get("password")),
+      });
+      if (signErr) {
         setBusy(false);
+        setError("E-mail ou senha incorretos.");
         return;
       }
+      // 2FA ativo? eleva a sessão para AAL2 antes de entrar
+      const { data: aal } = await supabase.auth.mfa.getAuthenticatorAssuranceLevel();
+      if (aal?.nextLevel === "aal2" && aal.nextLevel !== aal.currentLevel) {
+        const { data: factors } = await supabase.auth.mfa.listFactors();
+        const totp = factors?.totp?.[0];
+        if (totp) {
+          const { data: challenge, error: chErr } = await supabase.auth.mfa.challenge({ factorId: totp.id });
+          if (chErr || !challenge) {
+            setBusy(false);
+            setError("Não foi possível iniciar o 2FA. Tente novamente.");
+            return;
+          }
+          mfaRef.current = { factorId: totp.id, challengeId: challenge.id };
+          setStep("mfa");
+          setBusy(false);
+          return;
+        }
+      }
+      window.location.assign("/");
+    } catch {
+      // ex.: variáveis NEXT_PUBLIC_SUPABASE_* ausentes no build → client não inicializa
+      setBusy(false);
+      setError("Não foi possível conectar ao login. Verifique a configuração (Supabase) e tente de novo.");
     }
-    window.location.assign("/");
   }
 
   async function submitCode(e: React.FormEvent<HTMLFormElement>) {
