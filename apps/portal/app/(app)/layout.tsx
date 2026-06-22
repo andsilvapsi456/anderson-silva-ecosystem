@@ -1,15 +1,21 @@
+import { redirect } from "next/navigation";
 import { isDemoMode } from "@as/auth";
 import { PortalShell } from "../../components/portal-shell";
-import { getMe } from "../../lib/data";
+import { getMe, getMyRole } from "../../lib/data";
+
+const ADMIN_URL = process.env.NEXT_PUBLIC_ADMIN_URL ?? "https://anderson-silva-ecosystem.aged-tree-05e8.workers.dev";
 
 export default async function AppLayout({ children }: { children: React.ReactNode }) {
   // O middleware já exige sessão; aqui garantimos que o login tem cadastro de paciente
   const me = await getMe().catch(() => null);
 
-  // Conta autenticada SEM cadastro de paciente (ex.: conta da equipe/admin).
-  // Não redirecionamos para /login (isso causaria loop, pois há sessão ativa):
-  // mostramos uma mensagem clara com a opção de sair.
+  // Conta autenticada SEM cadastro de paciente. Se for da EQUIPE (admin/psicólogo),
+  // mandamos direto para o painel administrativo — login único por papel.
   if (!me && !isDemoMode()) {
+    const role = await getMyRole().catch(() => null);
+    if (role && role !== "PATIENT") redirect(ADMIN_URL);
+
+    // Conta logada que não é paciente nem equipe → mensagem clara (sem loop).
     return (
       <main className="flex min-h-screen items-center justify-center bg-[var(--bg)] p-6">
         <div className="w-full max-w-md rounded-[var(--radius)] border border-[var(--border)] bg-[var(--surface)] p-8 text-center shadow-[var(--shadow)]">

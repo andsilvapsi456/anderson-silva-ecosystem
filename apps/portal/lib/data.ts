@@ -91,6 +91,18 @@ export async function getMe(): Promise<Patient> {
   return mapPatient(data);
 }
 
+/** Papel do usuário logado (PATIENT, ADMIN, PSYCHOLOGIST…) — para rotear o login. */
+export async function getMyRole(): Promise<string | null> {
+  if (isDemoMode()) return "PATIENT";
+  const supabase = await supa();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) return null;
+  const { data } = await supabase.from("profiles").select("role").eq("id", user.id).maybeSingle();
+  return (data as { role?: string } | null)?.role ?? null;
+}
+
 export async function getMyAppointments(): Promise<Appointment[]> {
   if (isDemoMode()) {
     return mockAppointments
