@@ -41,8 +41,12 @@ export interface IntegrationStatus {
 /** Lê as env vars e resume o que está conectado (para o painel de saúde). */
 export function getIntegrationStatus(): IntegrationStatus[] {
   const has = (...vars: string[]) => vars.every((v) => Boolean(process.env[v]));
+  // NEXT_PUBLIC_* só é injetada pelo Next em acesso ESTÁTICO (literal). Lida via
+  // process.env[v] dinâmico ela "some" no runtime do Cloudflare e dá falso-negativo.
+  // Por isso a URL pública é lida estaticamente aqui (assada no build).
+  const hasSupabaseUrl = Boolean(process.env.NEXT_PUBLIC_SUPABASE_URL);
   return [
-    { key: "supabase", label: "Banco & Auth (Supabase)", connected: has("NEXT_PUBLIC_SUPABASE_URL", "SUPABASE_SERVICE_ROLE_KEY"), hint: "Sem isso, o sistema roda em modo demonstração." },
+    { key: "supabase", label: "Banco & Auth (Supabase)", connected: hasSupabaseUrl && has("SUPABASE_SERVICE_ROLE_KEY"), hint: "Sem isso, o sistema roda em modo demonstração." },
     { key: "resend", label: "E-mail (Resend)", connected: has("RESEND_API_KEY"), hint: "Agenda diária, lembretes e cobranças por e-mail." },
     { key: "whatsapp", label: "WhatsApp Business", connected: has("WHATSAPP_API_TOKEN", "WHATSAPP_PHONE_NUMBER_ID"), hint: "Confirmação/cobrança e códigos por WhatsApp." },
     { key: "google", label: "Google Agenda + Meet", connected: has("GOOGLE_CALENDAR_REFRESH_TOKEN"), hint: "Sala fixa do Meet por paciente." },
