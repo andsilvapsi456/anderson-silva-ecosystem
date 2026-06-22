@@ -1,6 +1,6 @@
-import { redirect } from "next/navigation";
 import { isDemoMode } from "@as/auth";
 import { PortalShell } from "../../components/portal-shell";
+import { GoToAdmin } from "../../components/go-to-admin";
 import { getMe, getMyRole } from "../../lib/data";
 
 const ADMIN_URL = process.env.NEXT_PUBLIC_ADMIN_URL ?? "https://anderson-silva-ecosystem.aged-tree-05e8.workers.dev";
@@ -10,10 +10,11 @@ export default async function AppLayout({ children }: { children: React.ReactNod
   const me = await getMe().catch(() => null);
 
   // Conta autenticada SEM cadastro de paciente. Se for da EQUIPE (admin/psicólogo),
-  // mandamos direto para o painel administrativo — login único por papel.
+  // mandamos para o painel admin via redirect no NAVEGADOR (funciona entre domínios;
+  // o redirect() do servidor para URL externa 404a no Cloudflare/OpenNext).
   if (!me && !isDemoMode()) {
     const role = await getMyRole().catch(() => null);
-    if (role && role !== "PATIENT") redirect(ADMIN_URL);
+    if (role && role !== "PATIENT") return <GoToAdmin url={ADMIN_URL} />;
 
     // Conta logada que não é paciente nem equipe → mensagem clara (sem loop).
     return (
