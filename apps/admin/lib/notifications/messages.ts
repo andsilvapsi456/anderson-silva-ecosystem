@@ -3,6 +3,23 @@ import { formatBRL, formatTime, type Appointment, type Transaction } from "@as/s
 import { signActionToken } from "@as/auth/action";
 import { emailLayout } from "./mailer";
 
+/** Escapa dados do usuário interpolados em e-mail HTML (nome, motivo, descrição…) —
+ *  sem isso, um nome como `<a href=…>` viraria markup/phishing dentro do e-mail. */
+function esc(s: string | null | undefined): string {
+  return String(s ?? "")
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;")
+    .replaceAll('"', "&quot;")
+    .replaceAll("'", "&#39;");
+}
+
+/** Só aceita URL http(s) como href — qualquer outra coisa vira texto. */
+function safeUrl(u: string | null | undefined): string | null {
+  const s = String(u ?? "");
+  return /^https?:\/\//i.test(s) ? s : null;
+}
+
 /** Botões de confirmar/cancelar a sessão pelo e-mail (link tokenizado, sem login). */
 function sessionActionButtons(appointmentId: string): string {
   const base = process.env.NEXT_PUBLIC_ADMIN_URL ?? "http://localhost:3002";
@@ -33,12 +50,13 @@ export function composeDailyAgendaEmail(date: Date, sessions: Appointment[]): { 
 
   const rows = sessions
     .map((s) => {
-      const link = s.videoLink
-        ? `<a href="${s.videoLink}" style="color:#FF5A5A;font-weight:700">Entrar na sala →</a>`
-        : s.room ?? "Presencial";
+      const url = safeUrl(s.videoLink);
+      const link = url
+        ? `<a href="${esc(url)}" style="color:#FF5A5A;font-weight:700">Entrar na sala →</a>`
+        : esc(s.room ?? "Presencial");
       return `<tr>
         <td style="padding:10px 12px;border-bottom:1px solid #eaeaea;font-weight:800;white-space:nowrap">${formatTime(s.startsAt)}–${formatTime(s.endsAt)}</td>
-        <td style="padding:10px 12px;border-bottom:1px solid #eaeaea">${s.mode === "ONLINE" ? "📹" : "🏢"} <strong>${s.patientName}</strong></td>
+        <td style="padding:10px 12px;border-bottom:1px solid #eaeaea">${s.mode === "ONLINE" ? "📹" : "🏢"} <strong>${esc(s.patientName)}</strong></td>
         <td style="padding:10px 12px;border-bottom:1px solid #eaeaea">${link}</td>
       </tr>`;
     })
@@ -77,8 +95,8 @@ export function composeCancellationEmail(
   const date = new Date(s.startsAt);
   const quando = `${date.toLocaleDateString("pt-BR")} às ${formatTime(s.startsAt)}`;
   const subject = `Precisei cancelar nossa sessão de ${quando}`;
-  const body = `<p style="margin:0;line-height:1.7">Olá, ${firstName}! Preciso cancelar a nossa sessão de
-    <strong>${quando}</strong> — não poderei te atender nesse horário.${reason ? `<br/>Motivo: ${reason}` : ""}</p>
+  const body = `<p style="margin:0;line-height:1.7">Olá, ${esc(firstName)}! Preciso cancelar a nossa sessão de
+    <strong>${quando}</strong> — não poderei te atender nesse horário.${reason ? `<br/>Motivo: ${esc(reason)}` : ""}</p>
     <p style="margin:14px 0 0;line-height:1.7">Me desculpe pelo imprevisto. Quando quiser, é só responder este e-mail
     ou chamar no WhatsApp que já encontramos um novo horário. O seu cuidado continua sendo prioridade. ❤️</p>`;
   return { subject, html: emailLayout("Precisei cancelar nossa sessão", body) };
@@ -106,7 +124,7 @@ export function composeRescheduleEmail(
   toIso: string
 ): { subject: string; html: string } {
   const subject = `Sua sessão foi remarcada para ${quandoStr(toIso)}`;
-  const body = `<p style="margin:0;line-height:1.7">Olá, ${firstName}! Precisei remarcar a nossa sessão:
+  const body = `<p style="margin:0;line-height:1.7">Olá, ${esc(firstName)}! Precisei remarcar a nossa sessão:
     de <strong>${quandoStr(fromIso)}</strong> para <strong>${quandoStr(toIso)}</strong>.</p>
     <p style="margin:14px 0 0;line-height:1.7">Se o novo horário não ficar bom pra você, é só responder este
     e-mail ou chamar no WhatsApp que a gente ajusta. O link da sala e os lembretes continuam os mesmos. ❤️</p>`;
@@ -122,10 +140,11 @@ export function composeSessionReminderEmail(
   const date = new Date(s.startsAt);
   const when = kind === "24h" ? "amanhã" : "daqui a pouco";
   const subject = `Lembrete: sua sessão é ${when}, ${date.toLocaleDateString("pt-BR")} às ${formatTime(s.startsAt)}`;
+  const reminderUrl = safeUrl(s.videoLink);
   const linkRow =
     s.mode === "ONLINE"
-      ? `<p style="margin:14px 0 0">📹 A sessão é online — sua sala fixa está sempre disponível na <strong>Área do Paciente</strong>${s.videoLink ? `: <a href="${s.videoLink}" style="color:#FF5A5A;font-weight:700">entrar na sala →</a>` : "."}</p>`
-      : `<p style="margin:14px 0 0">🏢 A sessão é presencial${s.room ? ` — ${s.room}` : ""}.</p>`;
+      ? `<p style="margin:14px 0 0">📹 A sessão é online — sua sala fixa está sempre disponível na <strong>Área do Paciente</strong>${reminderUrl ? `: <a href="${esc(reminderUrl)}" style="color:#FF5A5A;font-weight:700">entrar na sala →</a>` : "."}</p>`
+      : `<p style="margin:14px 0 0">🏢 A sessão é presencial${s.room ? ` — ${esc(s.room)}` : ""}.</p>`;
   const body = `<p style="margin:0;line-height:1.7">Olá! Passando para lembrar com carinho da sua sessão
     <strong>${when}, ${date.toLocaleDateString("pt-BR")} às ${formatTime(s.startsAt)}</strong>.</p>
     ${linkRow}
@@ -152,6 +171,24 @@ export function composeBillingText(t: Transaction, pixKey: string): string {
 
 export function composeBillingEmail(t: Transaction, pixKey: string): { subject: string; html: string } {
   const subject = `Lembrete de pagamento — ${formatBRL(t.amountCents)} · vence ${new Date(t.dueDate).toLocaleDateString("pt-BR")}`;
-  const body = `<p style="margin:0;white-space:pre-line;line-height:1.7">${composeBillingText(t, pixKey)}</p>`;
+  const body = `<p style="margin:0;white-space:pre-line;line-height:1.7">${esc(composeBillingText(t, pixKey))}</p>`;
   return { subject, html: emailLayout("Lembrete de pagamento", body) };
+}
+
+/* ───────── Aniversário do paciente: parabéns automático 🎂 ───────── */
+
+export function composeBirthdayText(firstName: string): string {
+  return (
+    `Feliz aniversário, ${firstName}! 🎂🎉\n\n` +
+    `Hoje o dia é seu — e eu não podia deixar passar sem te desejar um novo ciclo ` +
+    `com saúde, leveza e bons encontros. Que você siga cuidando de si com o mesmo ` +
+    `carinho que dedica à sua caminhada.\n\n` +
+    `Um abraço grande,\nAnderson V. V. Silva · Psicólogo · CRP 06/166223`
+  );
+}
+
+export function composeBirthdayEmail(firstName: string): { subject: string; html: string } {
+  const subject = `Feliz aniversário, ${firstName}! 🎂`;
+  const body = `<p style="margin:0;white-space:pre-line;line-height:1.7">${esc(composeBirthdayText(firstName))}</p>`;
+  return { subject, html: emailLayout(`Feliz aniversário, ${esc(firstName)}! 🎉`, body) };
 }

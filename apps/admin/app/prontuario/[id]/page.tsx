@@ -27,14 +27,14 @@ export const metadata = { robots: { index: false } };
 
 export default async function ProntuarioPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
-  const patient = await getPatient(id);
-  if (!patient) notFound();
-
-  const [entries, panel, transactions] = await Promise.all([
+  // uma rodada só — getPatient junto (as demais só dependem do id)
+  const [patient, entries, panel, transactions] = await Promise.all([
+    getPatient(id),
     getRecordEntries(id),
     getPatientPanel(id),
     getTransactions(),
   ]);
+  if (!patient) notFound();
   const ordered = [...entries].sort((a, b) => a.createdAt.localeCompare(b.createdAt));
   const demanda = ordered.filter((e) => e.kind === "ANAMNESE" || e.kind === "PLANO_TERAPEUTICO");
   const evolucao = ordered.filter((e) => e.kind === "EVOLUCAO" || e.kind === "OBSERVACAO" || e.kind === "HIPOTESE_DIAGNOSTICA");
@@ -63,7 +63,7 @@ export default async function ProntuarioPage({ params }: { params: Promise<{ id:
           <p className="text-[13px] font-extrabold text-[#202020]">PRONTUÁRIO PSICOLÓGICO</p>
           <p>Anderson Victor Vieira Silva · CRP 06/166223</p>
           <p>hello@andersonsilvapsicologo.com.br · (11) 99247-1876</p>
-          <p>Emitido em {new Date().toLocaleDateString("pt-BR")}</p>
+          <p>Emitido em {new Date().toLocaleDateString("pt-BR", { timeZone: "America/Sao_Paulo" })}</p>
         </div>
       </header>
 

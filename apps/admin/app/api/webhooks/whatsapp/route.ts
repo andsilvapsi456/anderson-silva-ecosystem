@@ -7,11 +7,10 @@
  * Configurar no Meta Business: URL deste endpoint + WHATSAPP_VERIFY_TOKEN.
  */
 import { NextResponse } from "next/server";
-import { cookies } from "next/headers";
-import { createServerSupabase } from "@as/auth/server";
+import { createServiceSupabase } from "@as/auth/service";
 import { isDemoMode } from "@as/auth";
 import { rateLimit, clientIp } from "@as/shared";
-import { verifyMetaSignature } from "@as/shared/webhook-signature";
+import { safeEqual, verifyMetaSignature } from "@as/shared/webhook-signature";
 import { sendWhatsAppText } from "../../../../lib/notifications/whatsapp";
 
 const MAX_BODY = 100_000; // ~100 KB: payloads do WhatsApp são pequenos
@@ -22,7 +21,7 @@ export async function GET(request: Request) {
   const token = url.searchParams.get("hub.verify_token");
   const challenge = url.searchParams.get("hub.challenge");
 
-  if (mode === "subscribe" && token === process.env.WHATSAPP_VERIFY_TOKEN) {
+  if (mode === "subscribe" && safeEqual(token, process.env.WHATSAPP_VERIFY_TOKEN)) {
     return new Response(challenge ?? "", { status: 200 });
   }
   return NextResponse.json({ error: "verification failed" }, { status: 403 });
@@ -73,7 +72,14 @@ export async function POST(request: Request) {
     return NextResponse.json({ ok: true, demo: true, action, appointmentId });
   }
 
-  const supabase = createServerSupabase(await cookies());
+  // SERVICE ROLE: o Meta não manda cookies de sessão — com a chave anon a RLS
+  // rejeitaria o update em silêncio e o paciente receberia uma confirmação falsa.
+  // A autenticidade já foi garantida acima pela assinatura HMAC.
+  const supabase = createServiceSupabase();
+  if (!supabase) {
+    console.error("[SEGURANÇA] SUPABASE_SERVICE_ROLE_KEY ausente — webhook sem acesso ao banco.");
+    return NextResponse.json({ error: "webhook not configured" }, { status: 503 });
+  }
 
   if (action === "CONFIRM") {
     await supabase.from("appointments").update({ status: "CONFIRMADA" }).eq("id", appointmentId);

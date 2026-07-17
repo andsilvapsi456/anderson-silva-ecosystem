@@ -1,0 +1,66 @@
+# Evolution API — WhatsApp da clínica conectado por QR Code (WhatsApp Web).
+# Roda em qualquer VM com Docker (guia: docs/17-whatsapp-evolution.md).
+#
+#   cp .env.example .env   → preencher DOMAIN, API key e senha do Postgres
+#   docker compose up -d
+#   https://SEU_DOMINIO/manager → criar instância → escanear QR
+#
+# O Caddy emite HTTPS (Let's Encrypt) sozinho — precisa das portas 80/443
+# abertas e do DNS do domínio apontando para o IP desta VM.
+
+services:
+  evolution:
+    image: evoapicloud/evolution-api:latest
+    restart: unless-stopped
+    depends_on:
+      - postgres
+    environment:
+      SERVER_URL: https://${DOMAIN}
+      AUTHENTICATION_API_KEY: ${EVOLUTION_API_KEY}
+      DATABASE_ENABLED: "true"
+      DATABASE_PROVIDER: postgresql
+      DATABASE_CONNECTION_URI: postgresql://evolution:${POSTGRES_PASSWORD}@postgres:5432/evolution?schema=public
+      DATABASE_SAVE_DATA_INSTANCE: "true"
+      DATABASE_SAVE_DATA_NEW_MESSAGE: "false" # LGPD: não arquivar conversas aqui
+      DATABASE_SAVE_MESSAGE_UPDATE: "false"
+      DATABASE_SAVE_DATA_CONTACTS: "false"
+      DATABASE_SAVE_DATA_CHATS: "false"
+      CACHE_LOCAL_ENABLED: "true"
+      CACHE_REDIS_ENABLED: "false"
+      DEL_INSTANCE: "false" # nunca derrubar a instância por inatividade
+      LOG_LEVEL: ERROR
+    volumes:
+      - evolution_instances:/evolution/instances
+    expose:
+      - "8080"
+
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: evolution
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: evolution
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+
+  caddy:
+    image: caddy:2-alpine
+    restart: unless-stopped
+    depends_on:
+      - evolution
+    ports:
+      - "80:80"
+      - "443:443"
+    environment:
+      DOMAIN: ${DOMAIN}
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+
+volumes:
+  evolution_instances:
+  postgres_data:
+  caddy_data:
+  caddy_config:

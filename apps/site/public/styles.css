@@ -152,7 +152,7 @@ body{
 [data-theme="dark"] .brand .logo-color{display:none}
 [data-theme="dark"] .brand .logo-light{display:block}
 .nav{display:flex;align-items:center;gap:6px}
-.nav a{padding:9px 15px;border-radius:100px;font-weight:600;font-size:.95rem;
+.nav a{padding:9px 15px;border-radius:100px;font-weight:600;font-size:.95rem;white-space:nowrap;
   color:var(--text-soft);transition:color .2s,background .2s}
 .nav a:hover{color:var(--text);background:var(--bg-alt)}
 .header__cta{display:flex;align-items:center;gap:14px}

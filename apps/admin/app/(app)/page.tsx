@@ -45,9 +45,16 @@ export default async function DashboardPage() {
     getBillingConfigs(),
   ]);
 
+  // só a janela que a lista exibe (hoje → +7d, com folga de fuso) — evita
+  // mapear todo o histórico de sessões a cada render do dashboard
+  const windowStart = Date.now() - 24 * 3600_000;
+  const windowEnd = Date.now() + 8 * 86_400_000;
   const upcoming: SessionRow[] = await Promise.all(
     appointments
-      .filter((a) => a.status !== "CANCELADA")
+      .filter((a) => {
+        const t = new Date(a.startsAt).getTime();
+        return a.status !== "CANCELADA" && t >= windowStart && t <= windowEnd;
+      })
       .map(async (a) => ({
         id: a.id,
         patientId: a.patientId,
@@ -60,7 +67,7 @@ export default async function DashboardPage() {
       }))
   );
 
-  const today = new Date().toLocaleDateString("pt-BR", { weekday: "long", day: "numeric", month: "long" });
+  const today = new Date().toLocaleDateString("pt-BR", { weekday: "long", day: "numeric", month: "long", timeZone: "America/Sao_Paulo" });
 
   return (
     <>

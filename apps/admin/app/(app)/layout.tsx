@@ -14,11 +14,14 @@ const roleLabel: Record<string, string> = {
 };
 
 export default async function AppLayout({ children }: { children: React.ReactNode }) {
-  const patients = (await getPatients()).map((p) => ({ id: p.id, name: p.name }));
+  if (isDemoMode()) {
+    const patients = (await getPatients()).map((p) => ({ id: p.id, name: p.name }));
+    return <AdminShell patients={patients}>{children}</AdminShell>;
+  }
 
-  if (isDemoMode()) return <AdminShell patients={patients}>{children}</AdminShell>;
-
-  const user = await getSessionUser(await cookies());
+  // sessão + lista de pacientes em paralelo (eram sequenciais: 2× a latência)
+  const [allPatients, user] = await Promise.all([getPatients(), getSessionUser(await cookies())]);
+  const patients = allPatients.map((p) => ({ id: p.id, name: p.name }));
   if (!user) redirect("/login");
   // Gate por papel: paciente não entra no painel — vai para o portal
   if (user.role === "PATIENT") redirect(process.env.NEXT_PUBLIC_PORTAL_URL ?? "http://localhost:3001");

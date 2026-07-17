@@ -3,6 +3,7 @@
  * MODO DEMO: usa mocks de @as/shared. MODO REAL: queries Supabase —
  * a RLS limita o acesso conforme o papel (equipe/clínico) no banco.
  */
+import { cache } from "react";
 import { cookies } from "next/headers";
 import { createServerSupabase } from "@as/auth/server";
 import { isDemoMode } from "@as/auth";
@@ -30,7 +31,7 @@ export interface AgendaPrefs {
   blockHolidays: boolean;
 }
 
-export async function getAgendaPrefs(): Promise<AgendaPrefs> {
+export const getAgendaPrefs = cache(async (): Promise<AgendaPrefs> => {
   if (isDemoMode()) return { lunch: DEFAULT_LUNCH, blockHolidays: true };
   const { data } = await (await supa())
     .from("clinic_settings")
@@ -47,15 +48,16 @@ export async function getAgendaPrefs(): Promise<AgendaPrefs> {
     },
     blockHolidays: data.block_holidays ?? true,
   };
-}
+});
 
 async function supa() {
   return createServerSupabase(await cookies());
 }
 
-/* ───────────── mapeadores snake_case → tipos do domínio ───────────── */
+/* ───────────── mapeadores snake_case → tipos do domínio ─────────────
+ * Exportados para reuso na camada dos crons (lib/cron-data.ts).        */
 
-function mapPatient(r: any): Patient {
+export function mapPatient(r: any): Patient {
   return {
     id: r.id,
     name: r.social_name ?? r.name,
@@ -74,7 +76,7 @@ function mapPatient(r: any): Patient {
   };
 }
 
-function mapAppointment(r: any): Appointment {
+export function mapAppointment(r: any): Appointment {
   return {
     id: r.id,
     patientId: r.patient_id,
@@ -90,7 +92,7 @@ function mapAppointment(r: any): Appointment {
   };
 }
 
-function mapTransaction(r: any): Transaction {
+export function mapTransaction(r: any): Transaction {
   return {
     id: r.id,
     patientId: r.patient_id,
@@ -108,11 +110,15 @@ function mapTransaction(r: any): Transaction {
 
 /* ───────────────────────────── consultas ───────────────────────────── */
 
-export async function getPatients(): Promise<Patient[]> {
+/* cache() do React: memoiza POR REQUISIÇÃO — várias seções da mesma
+ * página compartilham uma única ida ao banco (ex.: dashboard chama
+ * getAppointments direto e dentro de getDashboardStats). */
+
+export const getPatients = cache(async (): Promise<Patient[]> => {
   if (isDemoMode()) return mockPatients;
   const { data } = await (await supa()).from("patients").select("*").order("name");
   return (data ?? []).map(mapPatient);
-}
+});
 
 export async function getPatient(id: string): Promise<Patient | null> {
   if (isDemoMode()) return mockPatients.find((p) => p.id === id) ?? null;
@@ -120,14 +126,14 @@ export async function getPatient(id: string): Promise<Patient | null> {
   return data ? mapPatient(data) : null;
 }
 
-export async function getAppointments(): Promise<Appointment[]> {
+export const getAppointments = cache(async (): Promise<Appointment[]> => {
   if (isDemoMode()) return [...mockAppointments].sort((a, b) => a.startsAt.localeCompare(b.startsAt));
   const { data } = await (await supa())
     .from("appointments")
     .select("*, patients(name, social_name), rooms(name)")
     .order("starts_at");
   return (data ?? []).map(mapAppointment);
-}
+});
 
 export async function getClinicalScales(patientId: string): Promise<ClinicalScale[]> {
   if (isDemoMode()) {
@@ -163,14 +169,14 @@ export async function getTimeBlocks(): Promise<TimeBlock[]> {
   }));
 }
 
-export async function getTransactions(): Promise<Transaction[]> {
+export const getTransactions = cache(async (): Promise<Transaction[]> => {
   if (isDemoMode()) return mockTransactions;
   const { data } = await (await supa())
     .from("transactions")
     .select("*, patients(name, social_name), receipts(number)")
     .order("due_date", { ascending: false });
   return (data ?? []).map(mapTransaction);
-}
+});
 
 export async function getRecordEntries(patientId: string): Promise<RecordEntry[]> {
   if (isDemoMode()) {
@@ -219,7 +225,7 @@ export async function getPatientDiary(patientId: string): Promise<DiaryEntry[]> 
 }
 
 /** Todos os check-ins de diário (relatório de sentimentos) — RLS: só clínicos. */
-export async function getAllDiaryEntries(): Promise<DiaryEntry[]> {
+export const getAllDiaryEntries = cache(async (): Promise<DiaryEntry[]> => {
   if (isDemoMode()) return mockDiaryEntries;
   const { data } = await (await supa())
     .from("diary_entries")
@@ -233,7 +239,7 @@ export async function getAllDiaryEntries(): Promise<DiaryEntry[]> {
     note: r.note,
     createdAt: r.created_at,
   }));
-}
+});
 
 /** Situação de pagamento de uma sessão (badge Pago/Pagar/Isento). */
 export type PaymentBadge = "PAGO" | "PAGAR" | "ISENTO";
@@ -473,13 +479,19 @@ export async function getPatientReport(
   year: number,
   month: number | null
 ): Promise<PatientReport | null> {
-  const patient = await getPatient(patientId);
+  // uma única rodada paralela em vez de 4 idas sequenciais ao banco
+  const [patient, allAppointments, allTransactions, diary] = await Promise.all([
+    getPatient(patientId),
+    getAppointments(),
+    getTransactions(),
+    getPatientDiary(patientId),
+  ]);
   if (!patient) return null;
 
-  const appointments = (await getAppointments()).filter(
+  const appointments = allAppointments.filter(
     (a) => a.patientId === patientId && inPeriod(a.startsAt, year, month)
   );
-  const transactions = (await getTransactions()).filter(
+  const transactions = allTransactions.filter(
     (t) => t.patientId === patientId && t.kind === "RECEITA" && inPeriod(t.dueDate, year, month)
   );
 
@@ -501,7 +513,7 @@ export async function getPatientReport(
   );
 
   // humor do diário no período — o check-in vira indicador clínico
-  const moods = (await getPatientDiary(patientId))
+  const moods = diary
     .filter((d) => d.mood && inPeriod(d.createdAt, year, month))
     .sort((a, b) => a.createdAt.localeCompare(b.createdAt))
     .map((d) => d.mood!);
@@ -531,8 +543,12 @@ export async function getPatientReport(
 
 /** KPIs do dashboard executivo. */
 export async function getDashboardStats() {
-  const appointments = await getAppointments();
-  const transactions = await getTransactions();
+  // 3 consultas em paralelo (antes eram sequenciais: 3× a latência)
+  const [appointments, transactions, patients] = await Promise.all([
+    getAppointments(),
+    getTransactions(),
+    getPatients(),
+  ]);
   const done = appointments.filter((a) => a.status === "REALIZADA").length;
   const missed = appointments.filter((a) => a.status === "FALTA").length;
   const receivables = transactions.filter((t) => t.kind === "RECEITA");
@@ -543,7 +559,6 @@ export async function getDashboardStats() {
   const overdueCount = receivables.filter((t) => t.status === "ATRASADO").length;
 
   const now = new Date();
-  const patients = await getPatients();
   const newPatientsMonth = patients.filter((p) => {
     const c = new Date(p.createdAt);
     return c.getMonth() === now.getMonth() && c.getFullYear() === now.getFullYear();

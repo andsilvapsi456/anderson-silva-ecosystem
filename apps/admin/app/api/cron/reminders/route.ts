@@ -13,11 +13,16 @@
  */
 import { NextResponse } from "next/server";
 import { isDemoMode } from "@as/auth";
-import { cookies } from "next/headers";
-import { createServerSupabase } from "@as/auth/server";
-import { formatTime, mockPatients } from "@as/shared";
-import { getAppointments, getPatient, getTransactions } from "../../../../lib/data";
-import { getNotificationSettings } from "../../../../lib/notifications/settings";
+import { formatTime } from "@as/shared";
+import { safeEqual } from "@as/shared/webhook-signature";
+import {
+  getCronAppointments,
+  getCronNotificationSettings,
+  getCronPatients,
+  getCronTransactions,
+  getSentReminderKeys,
+  markReminderSent,
+} from "../../../../lib/cron-data";
 import { composeBillingEmail, composeBillingText, composeSessionReminderEmail } from "../../../../lib/notifications/messages";
 import { sendEmail } from "../../../../lib/notifications/mailer";
 import { sendSessionConfirmRequest, sendWhatsAppText } from "../../../../lib/notifications/whatsapp";
@@ -27,7 +32,8 @@ const WINDOW_MIN = 20; // tolerância da janela (cron roda a cada 15 min)
 
 function authorized(request: Request): boolean {
   if (!process.env.CRON_SECRET) return true;
-  return request.headers.get("authorization") === `Bearer ${process.env.CRON_SECRET}`;
+  // comparação em tempo constante — `===` vaza o prefixo por timing
+  return safeEqual(request.headers.get("authorization"), `Bearer ${process.env.CRON_SECRET}`);
 }
 
 function inWindow(startsAt: string, hoursBefore: number): boolean {
@@ -36,41 +42,23 @@ function inWindow(startsAt: string, hoursBefore: number): boolean {
   return diffMin <= 0 && diffMin > -WINDOW_MIN;
 }
 
-async function alreadySent(appointmentId: string, kind: string): Promise<boolean> {
-  if (isDemoMode()) return false;
-  const supabase = createServerSupabase(await cookies());
-  const { data } = await supabase
-    .from("reminders")
-    .select("id")
-    .eq("appointment_id", appointmentId)
-    .eq("kind", kind)
-    .not("sent_at", "is", null)
-    .maybeSingle();
-  return Boolean(data);
-}
-
-async function markSent(appointmentId: string, kind: string, channel: string) {
-  if (isDemoMode()) return;
-  const supabase = createServerSupabase(await cookies());
-  await supabase.from("reminders").insert({
-    appointment_id: appointmentId,
-    kind,
-    channel,
-    scheduled_for: new Date().toISOString(),
-    sent_at: new Date().toISOString(),
-  });
-}
-
 export async function GET(request: Request) {
   if (!authorized(request)) return NextResponse.json({ error: "unauthorized" }, { status: 401 });
 
-  const settings = await getNotificationSettings();
+  // tudo em paralelo e UMA vez (antes: getPatient + dedupe por item = N+1 queries)
+  const [settings, allAppointments, patients] = await Promise.all([
+    getCronNotificationSettings(),
+    getCronAppointments(),
+    getCronPatients(),
+  ]);
+  const patientById = new Map(patients.map((p) => [p.id, p]));
   const sent: Record<string, string[]> = { sessao_24h: [], sessao_2h: [], cobranca: [] };
 
   /* ── 1 & 2: lembretes de sessão ── */
-  const appointments = (await getAppointments()).filter(
+  const appointments = allAppointments.filter(
     (a) => a.status === "PENDENTE" || a.status === "CONFIRMADA"
   );
+  const sentKeys = await getSentReminderKeys(appointments.map((a) => a.id));
 
   for (const a of appointments) {
     for (const kind of ["24h", "2h"] as const) {
@@ -78,11 +66,9 @@ export async function GET(request: Request) {
       const wantWa = kind === "24h" ? settings.remind24hWhatsapp : settings.remind2hWhatsapp;
       if (!wantEmail && !wantWa) continue;
       if (!inWindow(a.startsAt, kind === "24h" ? 24 : 2)) continue;
-      if (await alreadySent(a.id, `lembrete_${kind}`)) continue;
+      if (sentKeys.has(`${a.id}:lembrete_${kind}`)) continue;
 
-      const patient = isDemoMode()
-        ? mockPatients.find((p) => p.id === a.patientId)
-        : await getPatient(a.patientId);
+      const patient = patientById.get(a.patientId);
       if (!patient) continue;
 
       if (wantEmail && patient.email) {
@@ -95,7 +81,7 @@ export async function GET(request: Request) {
           // 24h antes: pede CONFIRMAÇÃO com botões — resposta volta no webhook
           await sendSessionConfirmRequest(phone, {
             firstName: patient.name.split(" ")[0],
-            date: new Date(a.startsAt).toLocaleDateString("pt-BR"),
+            date: new Date(a.startsAt).toLocaleDateString("pt-BR", { timeZone: "America/Sao_Paulo" }),
             time: formatTime(a.startsAt),
             mode: a.mode,
             appointmentId: a.id,
@@ -110,7 +96,7 @@ export async function GET(request: Request) {
           );
         }
       }
-      await markSent(a.id, `lembrete_${kind}`, wantWa ? "WHATSAPP" : "EMAIL");
+      await markReminderSent(a.id, `lembrete_${kind}`, wantWa ? "WHATSAPP" : "EMAIL");
       sent[`sessao_${kind}`].push(`${a.patientName} (${formatTime(a.startsAt)})`);
     }
   }
@@ -119,7 +105,7 @@ export async function GET(request: Request) {
   if (settings.billingEmail || settings.billingWhatsapp) {
     const today = new Date();
     today.setHours(0, 0, 0, 0);
-    const receivables = (await getTransactions()).filter(
+    const receivables = (await getCronTransactions()).filter(
       (t) => t.kind === "RECEITA" && (t.status === "PENDENTE" || t.status === "ATRASADO")
     );
 
@@ -131,9 +117,7 @@ export async function GET(request: Request) {
       const shouldSend = daysLate === 0 || (daysLate > 0 && daysLate % settings.billingRetryDays === 0);
       if (!shouldSend || !t.patientId) continue;
 
-      const patient = isDemoMode()
-        ? mockPatients.find((p) => p.id === t.patientId)
-        : await getPatient(t.patientId);
+      const patient = patientById.get(t.patientId);
       if (!patient) continue;
 
       if (settings.billingEmail && patient.email) {

@@ -4,6 +4,7 @@
  * MODO REAL: queries Supabase — a RLS garante que o paciente
  * só enxerga os próprios registros (defesa no banco, não no app).
  */
+import { cache } from "react";
 import { cookies } from "next/headers";
 import { createServerSupabase } from "@as/auth/server";
 import { isDemoMode } from "@as/auth";
@@ -80,7 +81,11 @@ function mapTransaction(r: any, patientName: string | null): Transaction {
 
 /* ───────────────────────────── consultas ───────────────────────────── */
 
-export async function getMe(): Promise<Patient> {
+/* cache() do React: memoiza POR REQUISIÇÃO — getMe() era rechamado dentro
+ * de cada consulta (sessões, pagamentos, diário), custando 2 idas ao banco
+ * cada vez. Agora a página inteira compartilha uma única resolução. */
+
+export const getMe = cache(async (): Promise<Patient> => {
   if (isDemoMode()) return mockPatients.find((p) => p.id === DEMO_PATIENT_ID)!;
 
   const supabase = await supa();
@@ -89,10 +94,10 @@ export async function getMe(): Promise<Patient> {
   } = await supabase.auth.getUser();
   const { data } = await supabase.from("patients").select("*").eq("profile_id", user!.id).single();
   return mapPatient(data);
-}
+});
 
 /** Papel do usuário logado (PATIENT, ADMIN, PSYCHOLOGIST…) — para rotear o login. */
-export async function getMyRole(): Promise<string | null> {
+export const getMyRole = cache(async (): Promise<string | null> => {
   if (isDemoMode()) return "PATIENT";
   const supabase = await supa();
   const {
@@ -101,9 +106,9 @@ export async function getMyRole(): Promise<string | null> {
   if (!user) return null;
   const { data } = await supabase.from("profiles").select("role").eq("id", user.id).maybeSingle();
   return (data as { role?: string } | null)?.role ?? null;
-}
+});
 
-export async function getMyAppointments(): Promise<Appointment[]> {
+export const getMyAppointments = cache(async (): Promise<Appointment[]> => {
   if (isDemoMode()) {
     return mockAppointments
       .filter((a) => a.patientId === DEMO_PATIENT_ID)
@@ -117,7 +122,7 @@ export async function getMyAppointments(): Promise<Appointment[]> {
     .eq("patient_id", me.id)
     .order("starts_at", { ascending: false });
   return (data ?? []).map((r) => mapAppointment(r, me.name));
-}
+});
 
 export async function getNextAppointment(): Promise<Appointment | null> {
   const now = new Date().toISOString();
@@ -133,7 +138,7 @@ export async function getLastAppointment(): Promise<Appointment | null> {
   return (await getMyAppointments()).filter((a) => a.startsAt <= now)[0] ?? null;
 }
 
-export async function getMyTransactions(): Promise<Transaction[]> {
+export const getMyTransactions = cache(async (): Promise<Transaction[]> => {
   if (isDemoMode()) return mockTransactions.filter((t) => t.patientId === DEMO_PATIENT_ID);
 
   const me = await getMe();
@@ -144,9 +149,9 @@ export async function getMyTransactions(): Promise<Transaction[]> {
     .eq("patient_id", me.id)
     .order("due_date", { ascending: false });
   return (data ?? []).map((r) => mapTransaction(r, me.name));
-}
+});
 
-export async function getMyDiary(): Promise<DiaryEntry[]> {
+export const getMyDiary = cache(async (): Promise<DiaryEntry[]> => {
   if (isDemoMode()) {
     return mockDiaryEntries
       .filter((d) => d.patientId === DEMO_PATIENT_ID)
@@ -167,9 +172,9 @@ export async function getMyDiary(): Promise<DiaryEntry[]> {
     note: r.note,
     createdAt: r.created_at,
   }));
-}
+});
 
-export async function getNotices(): Promise<Notice[]> {
+export const getNotices = cache(async (): Promise<Notice[]> => {
   if (isDemoMode()) return mockNotices;
 
   const supabase = await supa();
@@ -180,7 +185,7 @@ export async function getNotices(): Promise<Notice[]> {
     .order("published_at", { ascending: false })
     .limit(5);
   return (data ?? []).map((r) => ({ id: r.id, title: r.title, body: r.body, createdAt: r.published_at }));
-}
+});
 
 /**
  * Link da teleconsulta sempre disponível para o paciente — a sala é fixa

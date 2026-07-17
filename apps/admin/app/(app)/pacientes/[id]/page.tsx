@@ -31,10 +31,9 @@ const TABS = [
 
 export default async function PacientePage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
-  const patient = await getPatient(id);
-  if (!patient) notFound();
-
-  const [entries, appointments, transactions, panel, diary, scales] = await Promise.all([
+  // tudo em UMA rodada — getPatient junto (as demais só dependem do id)
+  const [patient, entries, appointments, transactions, panel, diary, scales] = await Promise.all([
+    getPatient(id),
     getRecordEntries(id),
     getAppointments(),
     getTransactions(),
@@ -42,6 +41,7 @@ export default async function PacientePage({ params }: { params: Promise<{ id: s
     getPatientDiary(id),
     getClinicalScales(id),
   ]);
+  if (!patient) notFound();
   const patientAppointments = appointments.filter((a) => a.patientId === id);
   const patientTransactions = transactions.filter((t) => t.patientId === id);
   const next = patientAppointments.find((a) => new Date(a.startsAt) > new Date() && a.status !== "CANCELADA");

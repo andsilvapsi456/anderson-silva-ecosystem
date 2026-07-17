@@ -30,12 +30,8 @@ export const DEFAULT_SETTINGS: NotificationSettings = {
   billingRetryDays: 5,
 };
 
-export async function getNotificationSettings(): Promise<NotificationSettings> {
-  if (isDemoMode()) return DEFAULT_SETTINGS;
-
-  const supabase = createServerSupabase(await cookies());
-  const { data } = await supabase.from("clinic_settings").select("*").eq("singleton", true).maybeSingle();
-  if (!data) return DEFAULT_SETTINGS;
+/** Linha do banco → settings (compartilhado com a variante service dos crons). */
+export function mapNotificationSettings(data: any): NotificationSettings {
   return {
     dailyAgendaEnabled: data.daily_agenda_enabled,
     dailyAgendaHour: data.daily_agenda_hour,
@@ -48,4 +44,13 @@ export async function getNotificationSettings(): Promise<NotificationSettings> {
     billingWhatsapp: data.billing_whatsapp,
     billingRetryDays: data.billing_retry_days,
   };
+}
+
+export async function getNotificationSettings(): Promise<NotificationSettings> {
+  if (isDemoMode()) return DEFAULT_SETTINGS;
+
+  const supabase = createServerSupabase(await cookies());
+  const { data } = await supabase.from("clinic_settings").select("*").eq("singleton", true).maybeSingle();
+  if (!data) return DEFAULT_SETTINGS;
+  return mapNotificationSettings(data);
 }

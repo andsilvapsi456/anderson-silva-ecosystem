@@ -64,7 +64,7 @@ export async function addEvolution(_prev: RecordActionState, formData: FormData)
   const { error } = await supabase.from("record_entries").insert({
     patient_id: d.patientId,
     kind: "EVOLUCAO",
-    title: `Evolução de sessão — ${new Date().toLocaleDateString("pt-BR")}`,
+    title: `Evolução de sessão — ${new Date().toLocaleDateString("pt-BR", { timeZone: "America/Sao_Paulo" })}`,
     content,
   });
   if (error) return { ok: false, error: "Não foi possível salvar a evolução." };

@@ -21,3 +21,14 @@ export function verifyMetaSignature(rawBody: string, header: string | null, appS
   // timingSafeEqual exige comprimentos iguais — diferença de tamanho já é inválida
   return a.length === b.length && timingSafeEqual(a, b);
 }
+
+/**
+ * Comparação de segredos em tempo constante (CRON_SECRET, verify tokens…).
+ * `a === b` vaza o tamanho do prefixo coincidente por análise de tempo.
+ */
+export function safeEqual(a: string | null | undefined, b: string | null | undefined): boolean {
+  if (!a || !b) return false;
+  const ba = Buffer.from(String(a));
+  const bb = Buffer.from(String(b));
+  return ba.length === bb.length && timingSafeEqual(ba, bb);
+}

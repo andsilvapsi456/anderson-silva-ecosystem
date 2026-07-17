@@ -20,14 +20,21 @@ export const DEFAULT_LUNCH: LunchConfig = {
   weekdays: [1, 2, 3, 4, 5], // seg–sex
 };
 
+/**
+ * Horários de parede ("12:00") são da CLÍNICA (America/Sao_Paulo, UTC-3 fixo —
+ * o Brasil aboliu o horário de verão em 2019). O servidor roda em UTC, então
+ * construímos os instantes com Date.UTC(+3h) em vez do fuso do servidor.
+ */
+const SP_OFFSET_H = 3;
+
 function atTime(day: Date, hhmm: string): string {
   const [h, m] = hhmm.split(":").map(Number);
-  return new Date(day.getFullYear(), day.getMonth(), day.getDate(), h, m, 0, 0).toISOString();
+  return new Date(Date.UTC(day.getFullYear(), day.getMonth(), day.getDate(), h + SP_OFFSET_H, m, 0, 0)).toISOString();
 }
 
 function dayBounds(day: Date): { start: string; end: string } {
-  const s = new Date(day.getFullYear(), day.getMonth(), day.getDate(), 0, 0, 0, 0);
-  const e = new Date(day.getFullYear(), day.getMonth(), day.getDate() + 1, 0, 0, 0, 0);
+  const s = new Date(Date.UTC(day.getFullYear(), day.getMonth(), day.getDate(), SP_OFFSET_H, 0, 0, 0));
+  const e = new Date(Date.UTC(day.getFullYear(), day.getMonth(), day.getDate() + 1, SP_OFFSET_H, 0, 0, 0));
   return { start: s.toISOString(), end: e.toISOString() };
 }
 

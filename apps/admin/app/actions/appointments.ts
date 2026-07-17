@@ -11,7 +11,6 @@ import {
   findBlock,
   findConflict,
   formatTime,
-  isWithinWorkingHours,
   mockAppointments,
   mockPatients,
   mockTimeBlocks,
@@ -68,10 +67,31 @@ export type AppointmentActionState = {
   channels?: string[];
 };
 
+// dateBr = "dd/mm/aaaa" e time = "HH:MM" são a hora de PAREDE da clínica (SP).
+// SP é UTC-3 fixo (Brasil sem horário de verão desde 2019) e o servidor roda em
+// UTC — o instante correto é Date.UTC(..., hh + 3). Sem isso, o que o Anderson
+// agenda às 14h apareceria às 11h no grid (que exibe em America/Sao_Paulo).
+const SP_OFFSET_H = 3;
 function toIso(dateBr: string, time: string): Date {
   const [d, m, y] = dateBr.split("/").map(Number);
   const [hh, mm] = time.split(":").map(Number);
-  return new Date(y, m - 1, d, hh, mm, 0, 0);
+  return new Date(Date.UTC(y, m - 1, d, hh + SP_OFFSET_H, mm, 0, 0));
+}
+
+/**
+ * A sessão cabe no expediente daquele dia? Lê a hora de PAREDE direto do input
+ * (já em SP), sem converter para instante — evita o viés de fuso do servidor.
+ */
+function withinWorkingHoursSP(dateBr: string, start: string, end: string): boolean {
+  const [d, m, y] = dateBr.split("/").map(Number);
+  const weekday = new Date(Date.UTC(y, m - 1, d, 12)).getUTCDay(); // meio-dia evita rollover
+  const window = DEFAULT_WORKING_HOURS[weekday];
+  if (!window) return false;
+  const min = (t: string) => {
+    const [h, mm] = t.split(":").map(Number);
+    return h * 60 + mm;
+  };
+  return min(start) >= min(window.open) && min(end) <= min(window.close);
 }
 
 /** Almoço recorrente + feriados (SP) que cobrem o intervalo — null se livre. */
@@ -138,7 +158,7 @@ export async function createAppointment(
   const endIso = endsAt.toISOString();
 
   // fora do horário de atendimento?
-  if (!isWithinWorkingHours(startIso, endIso, DEFAULT_WORKING_HOURS)) {
+  if (!withinWorkingHoursSP(d.date, d.start, d.end)) {
     return { ok: false, error: "Esse horário está fora do seu período de atendimento. Ajuste em Configurações → Agenda." };
   }
 
@@ -317,7 +337,7 @@ export async function rescheduleAppointment(input: {
 
   const startIso = startsAt.toISOString();
   const endIso = endsAt.toISOString();
-  if (!isWithinWorkingHours(startIso, endIso, DEFAULT_WORKING_HOURS)) {
+  if (!withinWorkingHoursSP(d.date, d.start, d.end)) {
     return { ok: false, error: "Esse horário está fora do seu período de atendimento." };
   }
 

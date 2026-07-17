@@ -1,17 +1,18 @@
 /**
- * WhatsApp Business Cloud API (Meta).
- * Sem WHATSAPP_API_TOKEN/WHATSAPP_PHONE_NUMBER_ID → modo demo (loga).
+ * Envio de WhatsApp — dois provedores, escolhidos por variável de ambiente:
  *
- * Importante (regra do WhatsApp): mensagens iniciadas pela clínica fora da
- * janela de 24h precisam usar um TEMPLATE aprovado no Meta Business
- * (categoria "utility" — confirmação de compromisso e cobrança se enquadram).
- * Os corpos abaixo correspondem aos templates a registrar:
- *   • confirmacao_sessao (botões: Confirmar / Preciso remarcar)
- *   • lembrete_sessao_2h
- *   • cobranca_acolhedora
+ *  1. EVOLUTION (preferido) — Evolution API conectada ao WhatsApp normal do
+ *     Anderson via QR Code (WhatsApp Web). Sem burocracia da Meta, sem
+ *     template aprovado, sem janela de 24h. Vars:
+ *       EVOLUTION_API_URL      ex.: https://evo.seuservidor.com
+ *       EVOLUTION_API_KEY      apikey da instância (ou global)
+ *       EVOLUTION_INSTANCE     nome da instância conectada
+ *  2. META (fallback) — WhatsApp Business Cloud API. Vars:
+ *       WHATSAPP_API_TOKEN + WHATSAPP_PHONE_NUMBER_ID
+ *  3. Nenhum configurado → modo demo (loga).
  */
 
-const API = "https://graph.facebook.com/v21.0";
+const META_API = "https://graph.facebook.com/v21.0";
 
 export interface WaResult {
   ok: boolean;
@@ -19,7 +20,10 @@ export interface WaResult {
   error?: string;
 }
 
-function configured(): boolean {
+function evolutionConfigured(): boolean {
+  return Boolean(process.env.EVOLUTION_API_URL && process.env.EVOLUTION_API_KEY && process.env.EVOLUTION_INSTANCE);
+}
+function metaConfigured(): boolean {
   return Boolean(process.env.WHATSAPP_API_TOKEN && process.env.WHATSAPP_PHONE_NUMBER_ID);
 }
 
@@ -29,8 +33,33 @@ export function normalizePhone(phone: string): string {
   return digits.length <= 11 ? `55${digits}` : digits;
 }
 
-async function post(payload: Record<string, unknown>): Promise<WaResult> {
-  const res = await fetch(`${API}/${process.env.WHATSAPP_PHONE_NUMBER_ID}/messages`, {
+/* ───────────── Evolution API (WhatsApp Web) ───────────── */
+
+async function evolutionSendText(to: string, text: string): Promise<WaResult> {
+  const base = process.env.EVOLUTION_API_URL!.replace(/\/+$/, "");
+  const instance = encodeURIComponent(process.env.EVOLUTION_INSTANCE!);
+  try {
+    const res = await fetch(`${base}/message/sendText/${instance}`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", apikey: process.env.EVOLUTION_API_KEY! },
+      body: JSON.stringify({ number: normalizePhone(to), text }),
+    });
+    if (!res.ok) {
+      const error = await res.text();
+      console.error("Evolution WhatsApp falhou:", error);
+      return { ok: false, error };
+    }
+    return { ok: true };
+  } catch (e) {
+    console.error("Evolution WhatsApp erro de rede:", e);
+    return { ok: false, error: String(e) };
+  }
+}
+
+/* ───────────── Meta Cloud API ───────────── */
+
+async function metaPost(payload: Record<string, unknown>): Promise<WaResult> {
+  const res = await fetch(`${META_API}/${process.env.WHATSAPP_PHONE_NUMBER_ID}/messages`, {
     method: "POST",
     headers: {
       Authorization: `Bearer ${process.env.WHATSAPP_API_TOKEN}`,
@@ -40,24 +69,26 @@ async function post(payload: Record<string, unknown>): Promise<WaResult> {
   });
   if (!res.ok) {
     const error = await res.text();
-    console.error("WhatsApp falhou:", error);
+    console.error("WhatsApp (Meta) falhou:", error);
     return { ok: false, error };
   }
   return { ok: true };
 }
 
+/* ───────────── API pública (mesma assinatura de antes) ───────────── */
+
 export async function sendWhatsAppText(to: string, body: string): Promise<WaResult> {
-  if (!configured()) {
-    console.info(`[DEMO] WhatsApp → ${to}:\n${body}`);
-    return { ok: true, demo: true };
-  }
-  return post({ to: normalizePhone(to), type: "text", text: { body } });
+  if (evolutionConfigured()) return evolutionSendText(to, body);
+  if (metaConfigured()) return metaPost({ to: normalizePhone(to), type: "text", text: { body } });
+  console.info(`[DEMO] WhatsApp → ${to}:\n${body}`);
+  return { ok: true, demo: true };
 }
 
 /**
- * Lembrete de sessão com botões "Confirmar" / "Preciso remarcar".
- * A resposta chega no webhook /api/webhooks/whatsapp com o id
- * CONFIRM_<appointmentId> ou RESCHEDULE_<appointmentId>.
+ * Lembrete de sessão pedindo confirmação de presença.
+ * • Meta: botões nativos (id CONFIRM_/RESCHEDULE_/CANCEL_ chegam no webhook).
+ * • Evolution: WhatsApp Web não tem botões confiáveis → manda texto pedindo
+ *   a resposta em palavra (a leitura da resposta é um passo futuro).
  */
 export async function sendSessionConfirmRequest(
   to: string,
@@ -69,12 +100,16 @@ export async function sendSessionConfirmRequest(
     `*${args.date} às ${args.time}*.\n\n` +
     `Você confirma sua presença?`;
 
-  if (!configured()) {
+  if (evolutionConfigured()) {
+    return evolutionSendText(to, `${body}\n\nResponda *SIM* para confirmar ou me chame para remarcar. ❤️`);
+  }
+
+  if (!metaConfigured()) {
     console.info(`[DEMO] WhatsApp (botões) → ${to}:\n${body}\n[Confirmar ✅] [Remarcar] [Cancelar ❌]`);
     return { ok: true, demo: true };
   }
 
-  return post({
+  return metaPost({
     to: normalizePhone(to),
     type: "interactive",
     interactive: {

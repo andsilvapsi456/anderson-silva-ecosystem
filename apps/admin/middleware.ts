@@ -2,7 +2,8 @@ import { NextResponse, type NextRequest } from "next/server";
 import { updateSession } from "@as/auth/middleware";
 import { contentSecurityPolicy } from "@as/shared/security-headers";
 
-const PUBLIC_PATHS = ["/login", "/auth", "/api/sessao", "/api/webhooks"];
+// /api/cron não usa sessão: cada rota exige Bearer CRON_SECRET por conta própria
+const PUBLIC_PATHS = ["/login", "/auth", "/api/sessao", "/api/webhooks", "/api/cron"];
 const dev = process.env.NODE_ENV !== "production";
 
 /** Nonce por request (edge runtime: Web Crypto + btoa disponíveis). */

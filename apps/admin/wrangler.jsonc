@@ -4,6 +4,9 @@
   "main": ".open-next/worker.js",
   "compatibility_date": "2024-12-30",
   "compatibility_flags": ["nodejs_compat"],
+  // Executa o worker PERTO do Supabase (us-east) em vez de perto do visitante:
+  // cada request faz 3-6 idas ao banco — cai de ~140ms para ~10ms por ida.
+  "placement": { "mode": "smart" },
   "assets": {
     "binding": "ASSETS",
     "directory": ".open-next/assets"

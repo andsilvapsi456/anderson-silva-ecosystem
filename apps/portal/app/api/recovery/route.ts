@@ -61,11 +61,22 @@ export async function POST(request: Request) {
 
   await storeCode(phone, sha256(code), channel);
 
-  if (channel === "whatsapp" && process.env.WHATSAPP_API_TOKEN && process.env.WHATSAPP_PHONE_NUMBER_ID) {
+  const digits = phone.replace(/\D/g, "");
+  const waNumber = digits.length <= 11 ? `55${digits}` : digits;
+  if (channel === "whatsapp" && process.env.EVOLUTION_API_URL && process.env.EVOLUTION_API_KEY && process.env.EVOLUTION_INSTANCE) {
+    // Evolution API (WhatsApp Web) — preferido
+    const base = process.env.EVOLUTION_API_URL.replace(/\/+$/, "");
+    const instance = encodeURIComponent(process.env.EVOLUTION_INSTANCE);
+    await fetch(`${base}/message/sendText/${instance}`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", apikey: process.env.EVOLUTION_API_KEY },
+      body: JSON.stringify({ number: waNumber, text }),
+    }).catch((e) => console.error("Evolution OTP falhou:", e));
+  } else if (channel === "whatsapp" && process.env.WHATSAPP_API_TOKEN && process.env.WHATSAPP_PHONE_NUMBER_ID) {
     await fetch(`https://graph.facebook.com/v21.0/${process.env.WHATSAPP_PHONE_NUMBER_ID}/messages`, {
       method: "POST",
       headers: { Authorization: `Bearer ${process.env.WHATSAPP_API_TOKEN}`, "Content-Type": "application/json" },
-      body: JSON.stringify({ messaging_product: "whatsapp", to: phone, type: "text", text: { body: text } }),
+      body: JSON.stringify({ messaging_product: "whatsapp", to: waNumber, type: "text", text: { body: text } }),
     }).catch((e) => console.error("WhatsApp OTP falhou:", e));
   } else if (channel === "sms") {
     console.info(`[SMS] enviar ${code} para ${phone}`); // integrar Twilio/Zenvia
