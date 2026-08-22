@@ -127,7 +127,7 @@ npm test
 
 ## 🌐 Site institucional (HostGator)
 
-O site público **não** é o app `apps/site`. No ar está HTML estático em `/home2/ander012/public_html`, no HostGator (`br1032.hostgator.com.br`), atrás do proxy do Cloudflare. São 8 páginas: `index`, `sobre`, `servicos`, `faq`, `contato`, `reembolso`, `privacidade` e `404`.
+O site público **não** é o app `apps/site`. No ar está HTML estático na pasta `public_html` da hospedagem compartilhada (HostGator), atrás do proxy do Cloudflare. São 8 páginas: `index`, `sobre`, `servicos`, `faq`, `contato`, `reembolso`, `privacidade` e `404`.
 
 O pipeline que gera essas páginas vive **fora deste repositório**, em `site-publicar/` na máquina do Anderson: ele baixa para `live/` o HTML que está publicado, aplica as mudanças e escreve em `out/`. Parte sempre do que está no ar, nunca de uma cópia local defasada — o `apps/site/content/` daqui está desatualizado e não deve ser usado como fonte.
 
@@ -145,14 +145,16 @@ O pipeline que gera essas páginas vive **fora deste repositório**, em `site-pu
 
 cPanel → Gerenciador de Arquivos → **Carregar**, com o checkbox *"Substitua os arquivos existentes"* marcado antes de mandar. O uploader do cPanel processa **um arquivo por vez** — mandar vários de uma vez sobe só o primeiro.
 
-Conferir depois, direto na origem (fura o Cloudflare, que responde 403 a bots):
+Para conferir depois, o caminho é bater **direto na origem**, furando o Cloudflare — que responde 403 a bots:
 
 ```bash
-curl --resolve andersonsilvapsicologo.com.br:443:162.241.203.230 -k -s \
+curl --resolve andersonsilvapsicologo.com.br:443:<IP-DE-ORIGEM> -k -s \
   https://andersonsilvapsicologo.com.br/reembolso.html | head -5
 ```
 
-Para ver o que o **visitante** recebe, use um navegador de verdade: o `fetch()` de dentro de uma aba já autenticada no challenge passa, o `curl` não.
+O IP de origem e o host do cPanel **não ficam neste repositório**, que é público: expor o IP de origem anula boa parte da proteção do Cloudflare, já que permite contornar o proxy. Eles estão nas anotações privadas do projeto.
+
+Para ver o que o **visitante** recebe, use um navegador de verdade: o `fetch()` de dentro de uma aba já aprovada no challenge passa, o `curl` não.
 
 ---
 
