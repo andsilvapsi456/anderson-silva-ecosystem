@@ -125,6 +125,37 @@ npm test
 
 ---
 
+## 🌐 Site institucional (HostGator)
+
+O site público **não** é o app `apps/site`. No ar está HTML estático em `/home2/ander012/public_html`, no HostGator (`br1032.hostgator.com.br`), atrás do proxy do Cloudflare. São 8 páginas: `index`, `sobre`, `servicos`, `faq`, `contato`, `reembolso`, `privacidade` e `404`.
+
+O pipeline que gera essas páginas vive **fora deste repositório**, em `site-publicar/` na máquina do Anderson: ele baixa para `live/` o HTML que está publicado, aplica as mudanças e escreve em `out/`. Parte sempre do que está no ar, nunca de uma cópia local defasada — o `apps/site/content/` daqui está desatualizado e não deve ser usado como fonte.
+
+### Última publicação — 21/08/2026
+
+| Mudança | Detalhe |
+|---|---|
+| Página `/reembolso.html` | **Nova.** Como pedir reembolso de psicoterapia ao convênio: o que mudou nas regras da ANS (RN 541/2022 derrubou o teto de sessões, RN 566/2022 fixou 10 dias úteis para atendimento e 30 dias para o pagamento), passo a passo, o que o recibo precisa ter e as operadoras que costumam ter livre escolha. Design próprio, com o CSS embutido na própria página para não mexer no `styles.css` compartilhado. |
+| Aba **Reembolso** no menu | Em todas as páginas, ao lado de "Área do Paciente". O menu do topo só cabe 7 itens a partir de **1260px**; abaixo disso vira hambúrguer. |
+| Política de privacidade | Reescrita em 12 seções: cookies e medição, formulário de contato, WhatsApp, Área do Paciente, recibos de reembolso e direitos da LGPD. |
+| Banner de cookies | **Removido de todas as páginas.** Ver [Segurança e LGPD](#-segurança-e-lgpd). |
+| `styles.css` | Corrigido um `;` solto ao fim de uma regra, que fazia o navegador **abandonar o resto do arquivo**: qualquer CSS novo no fim era ignorado em silêncio. |
+
+### Como publicar
+
+cPanel → Gerenciador de Arquivos → **Carregar**, com o checkbox *"Substitua os arquivos existentes"* marcado antes de mandar. O uploader do cPanel processa **um arquivo por vez** — mandar vários de uma vez sobe só o primeiro.
+
+Conferir depois, direto na origem (fura o Cloudflare, que responde 403 a bots):
+
+```bash
+curl --resolve andersonsilvapsicologo.com.br:443:162.241.203.230 -k -s \
+  https://andersonsilvapsicologo.com.br/reembolso.html | head -5
+```
+
+Para ver o que o **visitante** recebe, use um navegador de verdade: o `fetch()` de dentro de uma aba já autenticada no challenge passa, o `curl` não.
+
+---
+
 ## ☁️ Deploy (Cloudflare Workers)
 
 **Admin** e **portal** rodam como Workers, com deploy automático a cada push na `main`. O **site** continua hospedado no HostGator (onde está o domínio `andersonsilvapsicologo.com.br`) — o `wrangler.jsonc` dele já existe caso um dia mude de casa.
@@ -155,6 +186,14 @@ Row Level Security em todas as tabelas: o paciente só vê o que é dele, a secr
 Além disso: CSP com **nonce por requisição** (sem `unsafe-inline` em script), HSTS, COOP, Permissions-Policy, 2FA (TOTP) no admin, rate limit nas rotas públicas, webhooks com assinatura HMAC validada em tempo constante e *fail-closed* em produção.
 
 Detalhes em [`docs/11-seguranca-lgpd.md`](docs/11-seguranca-lgpd.md) e [`docs/15-blindagem-seguranca.md`](docs/15-blindagem-seguranca.md).
+
+> ### ⚠️ Cookies do site institucional — mudança de postura (21/08/2026)
+>
+> O banner de consentimento foi **removido** a pedido do Anderson e o Consent Mode v2 passou a nascer `granted` nos quatro sinais. Isso preserva a medição do GA4 e as conversões do Google Ads, que morreriam se o banner saísse com o padrão `denied`.
+>
+> Em troca, a base legal da medição e da publicidade deixou de ser **consentimento** e passou a ser **legítimo interesse** (art. 7º, IX da LGPD), com recusa pelo navegador, pelo complemento do Analytics e pelo Google Ad Center — é assim que a política descreve hoje. Como a clínica lida com dado de saúde, este é o ponto do site que mais merece revisão jurídica.
+
+
 
 ---
 
